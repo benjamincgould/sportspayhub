@@ -1,4 +1,4 @@
-// Hourly clean-up, called by Vercel Cron (see vercel.json). Vercel sends CRON_SECRET as a bearer
+// Daily clean-up (3am NZ), called by Vercel Cron (see vercel.json). Vercel sends CRON_SECRET as a bearer
 // token, so nobody else can trigger it.
 import crypto from 'node:crypto';
 import { getApp } from '../../../../lib/server/instance';

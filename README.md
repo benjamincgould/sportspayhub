@@ -4,9 +4,18 @@ An app any sports club can sign up to. Each club gets its own private space with
 
 **Built with:** Next.js 16 on Vercel (Pro), Supabase (Pro) for the database and sign-in, Stripe for payments, and Resend or Postmark for email.
 
+## Building and testing on free plans
+
+You can build and test everything on free plans. A few things work differently:
+
+- **Vercel Hobby** is for non-commercial use only, which covers building and testing with Stripe in test mode. Move to Pro before taking real payments. The clean-up job runs once a day, because Hobby doesn't allow more often.
+- **Supabase Free** pauses a project after 7 days without use; restore it from the dashboard. It also has **no automatic backups**, so don't put real families' details in it. Skip the Pro-only steps below: leaked-password protection and session time-boxing. The app still checks passwords against known breaches itself.
+- **Resend Free** sends up to 100 emails a day. Until you verify your own domain, use `EMAIL_FROM=onboarding@resend.dev`. Resend will then only deliver to the email address you signed up to Resend with, so test with that address, or with `+` variations of it if Resend accepts them.
+- **Stripe** test mode is free. Use card `4242 4242 4242 4242`.
+
 | Folder | What it is |
 | --- | --- |
-| `app/` | The Next.js app: the page, and the API routes (`/api/...`, Stripe's `/api/webhook`, the hourly `/api/cron/sweep`) |
+| `app/` | The Next.js app: the page, and the API routes (`/api/...`, Stripe's `/api/webhook`, the daily `/api/cron/sweep`) |
 | `components/` | The screens: sign-in, club sign-up, the parent, treasurer and coach screens, and your owner console |
 | `lib/server/` | Checks who's signed in, keeps every club's data separate, decides who may see what, and talks to Supabase and Stripe |
 | `supabase/migrations/` | The database tables, run once in Supabase |
@@ -32,7 +41,7 @@ You'll need accounts with GitHub, Supabase (Pro), Vercel (Pro), Resend or Postma
 
 ### 1. Supabase
 
-1. Create a project on the **Pro** plan, region **Sydney (ap-southeast-2)**, with a strong database password (save it in your password manager).
+1. Create a project (Pro for real use; Free is fine for testing), region **Sydney (ap-southeast-2)**, with a strong database password (save it in your password manager).
 2. **SQL Editor → New query:** paste all of `supabase/migrations/0001_init.sql` and press **Run**. Do this once.
 3. **Authentication → Sign In / Providers:** turn **off** "Allow new users to sign up". The app creates every account itself, so nobody can sign up around it. Leave the Email provider on.
 4. **Authentication → Rate Limits:** turn **on IP address forwarding**. Without it, Supabase counts every sign-in as coming from your app's server, and its limits would throttle everyone at once.
@@ -52,13 +61,13 @@ Add and verify your domain, then create an API key. Set `RESEND_API_KEY` (or `PO
 ### 3. GitHub and Vercel
 
 1. The code goes in a **private** GitHub repository.
-2. In Vercel (**Pro**), choose **Add New → Project** and import the repository. Vercel detects Next.js; leave the build settings as they are.
+2. In Vercel (Pro for real use; Hobby for testing), choose **Add New → Project** and import the repository. Vercel detects Next.js; leave the build settings as they are.
 3. Before the first deploy, open **Environment Variables** and add everything from `.env.example`:
    - Run `npm run gen-key` on any computer with Node, or ask me, to get `APP_ENCRYPTION_KEY`, `CRON_SECRET` and `OWNER_SETUP_SECRET`.
    - **Save `APP_ENCRYPTION_KEY` in your password manager.** If it's lost, children's contact and medical details can't be recovered.
    - Set `APP_URL` to the address people will use, e.g. `https://app.yourdomain.co.nz`.
 4. **Deploy.** Then add your domain under **Settings → Domains**. If `APP_URL` changed, update it and redeploy.
-5. `vercel.json` already runs the app in Sydney (next to the database) and sets up the hourly clean-up.
+5. `vercel.json` already runs the app in Sydney (next to the database) and sets up the daily clean-up (3am NZ time).
 
 ### 4. Your owner account
 
@@ -84,7 +93,7 @@ Add and verify your domain, then create an API key. Set `RESEND_API_KEY` (or `PO
 4. A coach taps **Subscribe** in Settings and pays on Stripe's page. The club unlocks straight away.
 5. If the subscription ends, the club becomes look-only again. Their data is kept.
 
-Unconfirmed sign-ups are removed after 7 days by the hourly clean-up.
+Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 
 ## How the money works
 

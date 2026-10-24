@@ -17,7 +17,7 @@ Every protection from the review was carried over. The 53 server tests from the 
 | Rate limits | Kept in the database, so they hold across Vercel's many servers. Each visitor's own address is passed on to Supabase, so Supabase's limits apply per visitor rather than to the whole platform. |
 | Security headers | Every page gets a strict Content-Security-Policy with a fresh random nonce, so only the app's own scripts run. The API keeps its strict policy too. |
 | Webhooks | Stripe events must carry a valid signature. A club's account can only affect that club's members. |
-| Clean-up | An hourly job (Vercel Cron, protected by `CRON_SECRET`) removes expired sessions and links, old rate-limit records, activity older than a year, and sign-ups never confirmed within 7 days (their sign-in accounts too). |
+| Clean-up | A daily job (Vercel Cron, protected by `CRON_SECRET`) removes expired sessions and links, old rate-limit records, activity older than a year, and sign-ups never confirmed within 7 days (their sign-in accounts too). |
 | First-time set-up | The owner account is created at `/#/setup` with a one-time code from the server settings. It closes for good once an owner exists. |
 
 **Found and fixed during the move:**

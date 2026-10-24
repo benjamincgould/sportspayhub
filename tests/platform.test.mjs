@@ -119,7 +119,7 @@ test('first-time set-up: the owner account needs the set-up code, and works only
   assert.equal((await anon.post('/api/setup/owner', { secret: process.env.OWNER_SETUP_SECRET, email: 'second@owner.test' })).status, 404);
 });
 
-test('hourly clean-up removes expired sessions and never-confirmed sign-ups, sign-in accounts included', async () => {
+test('daily clean-up removes expired sessions and never-confirmed sign-ups, sign-in accounts included', async () => {
   const anon = browser(app.base);
   await anon.post('/api/signup', { clubName: 'Abandoned FC', sport: 'Football', name: 'Al', email: 'al@abandoned.test' });
   await app.settle();
