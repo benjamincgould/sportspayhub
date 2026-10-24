@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Accent colour shades (indigo by default). Each club's colour replaces these at runtime. */
+:root {
+  --brand-50: 238 242 255; --brand-100: 224 231 255; --brand-200: 199 210 254; --brand-300: 165 180 252; --brand-400: 129 140 248;
+  --brand-500: 99 102 241; --brand-600: 79 70 229; --brand-700: 67 56 202; --brand-800: 55 48 163; --brand-900: 49 46 129;
+}
+
+html, body, #root { height: 100%; }
+body { background: #f1f5f9; }

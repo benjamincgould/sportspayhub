@@ -1,0 +1,28 @@
+{
+  "name": "club-app",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.9" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "gen-key": "node scripts/gen-key.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
+    "next": "^16.4.1",
+    "postgres": "^3.4.5",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "stripe": "^18.0.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17"
+  }
+}
