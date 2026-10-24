@@ -43,7 +43,7 @@ async function ensureTemplate() {
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
-export async function startServer({ stripe = null, env = {}, staticDir = null, port = 0 } = {}) {
+export async function startServer({ stripe = null, env = {}, staticDir = null, port = 0, emptyDatabase = false } = {}) {
   // For browser tests: the bundled app, served with the same strict security headers as the real pages
   const pageHeaders = securityHeaders({ production: false });
   const staticFile = (pathname) => {
@@ -54,8 +54,10 @@ export async function startServer({ stripe = null, env = {}, staticDir = null, p
   await ensureTemplate();
   const dbName = `club_test_${crypto.randomBytes(6).toString('hex')}`;
   const admin = createSql(pgOpts(PG.pathname.slice(1) || 'postgres'));
-  await admin.unsafe(`create database ${dbName} template club_template`);
+  await admin.unsafe(`create database ${dbName} template ${emptyDatabase ? 'template0' : 'club_template'}`);
   const sql = createSql(pgOpts(dbName));
+  // An "empty" database still has what Supabase always provides (its auth schema and roles)
+  if (emptyDatabase) await sql.unsafe(fs.readFileSync(new URL('./supabase-stub.sql', import.meta.url), 'utf8'));
 
   const provider = createFakeAuth(sql);
   const mailer = createMailer({ production: false, log: {} });

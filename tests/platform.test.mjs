@@ -201,3 +201,24 @@ test('a missing database table is explained as a setup problem, not a vague erro
     await app.query('alter table app.rate_limits_hidden rename to rate_limits');
   }
 });
+
+test('on a brand-new empty database, the app creates its own tables on the first request', async () => {
+  const fresh = await startServer({ emptyDatabase: true });
+  try {
+    const before = await fresh.one("select count(*)::int as n from information_schema.schemata where schema_name = 'app'");
+    assert.equal(before.n, 0, 'starts empty');
+    const [a, b] = await Promise.all([browser(fresh.base).get('/api/platform'), browser(fresh.base).get('/api/platform')]);
+    assert.equal(a.status, 200, a.text);
+    assert.equal(b.status, 200, b.text);
+    assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and rowsecurity")).n, 14, 'all tables, locked');
+    assert.equal((await browser(fresh.base).get('/api/platform')).status, 200, 'later requests carry on as normal');
+  } finally {
+    await fresh.close();
+  }
+});
+
+test("the app's built-in copy of the database setup matches supabase/migrations/0001_init.sql", async () => {
+  const fs = await import('node:fs');
+  const { SCHEMA_SQL } = await import('../lib/server/schema-sql.js');
+  assert.equal(SCHEMA_SQL, fs.readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'), 'run: node scripts/build-schema.mjs');
+});

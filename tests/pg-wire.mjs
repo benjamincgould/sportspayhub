@@ -173,9 +173,14 @@ export function createSql(opts) {
     };
     sql.end = async () => conn.close();
     // For tests that look straight into the database: plain SQL with $1, $2… placeholders
-    sql.unsafe = async (text, params = []) => {
-      const release = await lock();
-      try { return await conn.query(text, params); } finally { release(); }
+    // Like the postgres package, the result also offers .simple() (multi-statement mode)
+    sql.unsafe = (text, params = []) => {
+      const run = inTx ? conn.query(text, params) : (async () => {
+        const release = await lock();
+        try { return await conn.query(text, params); } finally { release(); }
+      })();
+      run.simple = () => run;
+      return run;
     };
     return sql;
   };
