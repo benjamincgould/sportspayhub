@@ -3,6 +3,8 @@
 import crypto from 'node:crypto';
 import { getApp } from '../../../../lib/server/instance';
 
+import { setupErrorResponse } from '../../../../lib/server/setup-error';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -17,5 +19,7 @@ export async function GET(request) {
   if (!secret || secret.length < 16 || !same(request.headers.get('authorization') || '', `Bearer ${secret}`)) {
     return Response.json({ error: 'Not found.' }, { status: 404 });
   }
-  return Response.json(await getApp().sweep());
+  let app;
+  try { app = getApp(); } catch (err) { return setupErrorResponse(err); }
+  return Response.json(await app.sweep());
 }

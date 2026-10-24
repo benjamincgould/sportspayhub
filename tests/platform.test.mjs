@@ -190,3 +190,14 @@ test('Supabase sees each visitor\'s own address, not the server\'s (its per-addr
   await browser(app.base).post('/api/auth/login', { email: 'fam@addr.test', password: PASSWORD }, { headers: { 'X-Forwarded-For': 'not-an-address' } });
   assert.ok(app.provider.calls.some(([name, ip]) => name === 'withIp' && ip === null), 'anything that isn\'t a plain address is not passed on');
 });
+
+test('a missing database table is explained as a setup problem, not a vague error', async () => {
+  await app.query('alter table app.rate_limits rename to rate_limits_hidden');
+  try {
+    const r = await browser(app.base).get('/api/platform');
+    assert.equal(r.status, 500);
+    assert.match(r.json.error, /database tables are missing/);
+  } finally {
+    await app.query('alter table app.rate_limits_hidden rename to rate_limits');
+  }
+});
