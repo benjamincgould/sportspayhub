@@ -9,4 +9,5 @@
 }
 
 html, body, #root { height: 100%; }
+html, body { overscroll-behavior: none; } /* no rubber-band bounce around the app when it's full screen */
 body { background: #f1f5f9; }

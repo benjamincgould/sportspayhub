@@ -10,6 +10,7 @@ import { createSql } from './pg-wire.mjs';
 import { createFakeAuth, totpFor } from './fake-auth.mjs';
 import { createApp, createConfig } from '../lib/server/app.js';
 import { createMailer } from '../lib/server/email.js';
+import { ensureSchema } from '../lib/server/migrate.js';
 import { securityHeaders } from '../lib/headers.js';
 import SAMPLE_SQUADS from '../lib/server/sample-squads.js';
 
@@ -33,9 +34,8 @@ async function ensureTemplate() {
     await admin.unsafe('create database club_template');
     await admin.end();
     const t = createSql(pgOpts('club_template'));
-    for (const file of ['tests/supabase-stub.sql', 'supabase/migrations/0001_init.sql']) {
-      await t.unsafe(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'));
-    }
+    await t.unsafe(fs.readFileSync(new URL('./supabase-stub.sql', import.meta.url), 'utf8'));
+    await ensureSchema(t); // the same way the app sets up a real database
     await t.end();
   })();
   return templateReady;
@@ -165,7 +165,7 @@ export function fakeStripe() {
     checkout: { sessions: { create: rec('checkout.sessions.create', { url: 'https://checkout.stripe.test/session' }), retrieve: rec('checkout.sessions.retrieve', {}) } },
     billingPortal: { sessions: { create: rec('billingPortal.sessions.create', { url: 'https://billing.stripe.test/portal' }) } },
     subscriptions: {
-      retrieve: rec('subscriptions.retrieve', (id) => ({ id, status: 'active', current_period_end: 1893456000, metadata: {} })),
+      retrieve: rec('subscriptions.retrieve', (id) => ({ id, status: 'active', current_period_end: 1893456000, metadata: {}, items: { data: [{ id: 'si_1', price: { product: 'prod_platform' } }] } })),
       update: rec('subscriptions.update', (id) => ({ id, status: 'active', current_period_end: 1893456000 })),
       cancel: rec('subscriptions.cancel', {}),
     },
@@ -173,6 +173,12 @@ export function fakeStripe() {
     accountLinks: { create: rec('accountLinks.create', { url: 'https://connect.stripe.test/onboarding' }) },
     products: { retrieve: rec('products.retrieve', { name: 'x' }), update: rec('products.update', {}), create: rec('products.create', {}) },
     prices: { list: rec('prices.list', { data: [] }), create: rec('prices.create', { id: 'price_test' }) },
+    invoices: {
+      create: rec('invoices.create', () => ({ id: `in_${calls.length}` })),
+      finalizeInvoice: rec('invoices.finalizeInvoice', (id) => ({ id, hosted_invoice_url: `https://invoice.stripe.test/${id}` })),
+      voidInvoice: rec('invoices.voidInvoice', (id) => ({ id, status: 'void' })),
+    },
+    invoiceItems: { create: rec('invoiceItems.create', { id: 'ii_1' }) },
     webhooks: {
       // Accepts only events "signed" with the test secret, like the real check
       constructEvent: (raw, signature, secret) => {

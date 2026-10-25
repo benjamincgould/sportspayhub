@@ -42,7 +42,7 @@ You'll need accounts with GitHub, Supabase (Pro), Vercel (Pro), Resend or Postma
 ### 1. Supabase
 
 1. Create a project (Pro for real use; Free is fine for testing), region **Sydney (ap-southeast-2)**, with a strong database password (save it in your password manager).
-2. **SQL Editor → New query:** paste all of `supabase/migrations/0001_init.sql` and press **Run**. Do this once.
+2. **Database tables:** nothing to do. The app creates its tables the first time it runs, and applies later updates by itself. (If you prefer, you can still run the files in `supabase/migrations/` in the SQL Editor, in order.)
 3. **Authentication → Sign In / Providers:** turn **off** "Allow new users to sign up". The app creates every account itself, so nobody can sign up around it. Leave the Email provider on.
 4. **Authentication → Rate Limits:** turn **on IP address forwarding**. Without it, Supabase counts every sign-in as coming from your app's server, and its limits would throttle everyone at once.
 5. **Authentication → Multi-Factor:** check that **TOTP (App Authenticator)** is enabled.
@@ -81,7 +81,7 @@ Add and verify your domain, then create an API key. Set `RESEND_API_KEY` (or `PO
 2. **Turn on Connect** (Dashboard → Connect → Get started) and choose **Express** accounts for clubs.
 3. **Customer portal:** Settings → Billing → Customer portal. Turn on updating payment methods and cancelling.
 4. **Webhooks:** add two endpoints, both pointing at `https://your-address/api/webhook`:
-   - **Your account** events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`. Its signing secret goes in `STRIPE_WEBHOOK_SECRET`.
+   - **Your account** events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.voided`, `invoice.payment_failed`. Its signing secret goes in `STRIPE_WEBHOOK_SECRET`.
    - **Connected accounts** events: `account.updated`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`. Its signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`.
 5. Put your secret key in `STRIPE_SECRET_KEY` and redeploy. Test with card `4242 4242 4242 4242`. Switch to live keys once Stripe has verified your business.
 
@@ -97,7 +97,10 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 
 ## How the money works
 
-- **Clubs pay you** a flat monthly fee (default **$49 NZD**, `PLATFORM_PRICE_NZD`), into your Stripe account.
+- **Clubs pay you** a monthly fee into your Stripe account: **$49 NZD** by default (`PLATFORM_PRICE_NZD`), or a price you set for that club.
+- **Set-up fees:** set one per club (or a default for every new club with `PLATFORM_SETUP_FEE_NZD`). It's added once to the club's first subscription payment. For a club you've given free access, it's sent as a payment request straight away.
+- **Charge a club any time:** in the Owner Console, open a club's **Price & charges**, enter an amount and what it's for, and tap **Send payment request**. The club's coaches get an email with a secure Stripe payment page (open for 14 days), and it shows in their Settings with a **Pay** button. You see when it's paid, and you can cancel it until then.
+- **Changing a paying club's price** moves their subscription to the new price from their next bill, with no extra charge for the change itself.
 - **Parents pay their club** through Stripe Connect, into the club's own Stripe account. A coach taps **Connect Stripe** in Settings. That money never passes through your account.
 
 ## Day-to-day admin
@@ -109,7 +112,15 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 - **Someone leaves:** "Switch off" signs them out everywhere. "Delete account" then removes them for good.
 - **A member leaves the club:** open them on the Athletes tab and tap the bin twice.
 
-**For you (Owner Console):** give free access, put a club back to normal, switch it off, set up a club for someone, or delete a club (type its name to confirm).
+**For you (Owner Console):** give free access, put a club back to normal, switch it off, set up a club for someone (with its own price and set-up fee), set a club's price, charge a club, or delete a club (type its name to confirm).
+
+## Using it on a phone
+
+The app fills the whole screen on phones, tablets and computers. On a computer it has a side menu; on a phone, a bar along the bottom.
+
+To get it on a phone's home screen, where it opens full screen like a normal app with no browser bars:
+- **iPhone:** open the app in Safari, tap **Share**, then **Add to Home Screen**.
+- **Android:** open it in Chrome, tap **⋮**, then **Add to Home screen** (or **Install app**).
 
 **Known limit:** one email address belongs to one club. A parent with children in two clubs needs a different email for the second.
 

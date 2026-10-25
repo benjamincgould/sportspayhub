@@ -63,9 +63,10 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
   const [form, setForm] = useState({ name: club.name, sport: club.sport, group: b.group, member: b.member, colour: b.colour, logo: b.logo });
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState('');
-  const [price, setPrice] = useState(null);
+  const [charges, setCharges] = useState([]);
 
-  useEffect(() => { api('/api/platform').then((p) => setPrice(p.priceNzd)).catch(() => {}); }, []);
+  // Payment requests from the app provider (set-up fees, one-off charges)
+  useEffect(() => { api('/api/club/charges').then(setCharges).catch(() => {}); }, [club.id, club.status]);
 
   const dirty = form.name !== club.name || form.sport !== club.sport || form.group !== b.group || form.member !== b.member || form.colour !== b.colour || form.logo !== b.logo;
 
@@ -96,7 +97,16 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
 
   const status = club.status;
   const renews = club.subscription?.renewsOn ? new Date(`${club.subscription.renewsOn}T00:00:00`).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
-  const priceText = price ? `$${Number(price).toFixed(2)} a month` : 'a monthly fee';
+  const price = club.subscription?.priceNzd;
+  const setupFee = club.subscription?.setupFeeNzd || 0;
+  const priceText = price != null ? `$${Number(price).toFixed(2)} a month` : 'a monthly fee';
+  const setupText = setupFee > 0 ? ` + $${Number(setupFee).toFixed(2)} set-up` : '';
+  const openCharges = charges.filter((c) => c.status === 'open');
+  const paidCharges = charges.filter((c) => c.status === 'paid');
+  const payCharge = (url) => {
+    if (!/^https:\/\//.test(String(url))) { showFlash("Couldn't open the secure Stripe page. Please try again."); return; }
+    window.location.href = url;
+  };
 
   return (
     <div className="space-y-4">
@@ -105,13 +115,13 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
         <h3 className="font-semibold text-sm flex items-center gap-1.5"><CreditCard size={14} /> Club Subscription</h3>
         {status === 'preview' && (
           <>
-            <p className="text-xs text-slate-600">You're previewing the app with sample data. Subscribe for {priceText} to start using it with your own club. You can cancel any time.</p>
-            <button type="button" onClick={() => goTo('/api/club/subscribe', setBusy, showFlash, onRefresh)} disabled={busy !== ''} className={`w-full ${btn}`}>{busy ? 'Opening secure checkout…' : `Subscribe · ${priceText}`}</button>
+            <p className="text-xs text-slate-600">You're previewing the app with sample data. Subscribe for {priceText} to start using it with your own club{setupFee > 0 ? `, plus a one-off set-up fee of $${Number(setupFee).toFixed(2)} with the first payment` : ''}. You can cancel any time.</p>
+            <button type="button" onClick={() => goTo('/api/club/subscribe', setBusy, showFlash, onRefresh)} disabled={busy !== ''} className={`w-full ${btn}`}>{busy ? 'Opening secure checkout…' : `Subscribe · ${priceText}${setupText}`}</button>
           </>
         )}
         {status === 'active' && (
           <>
-            <p className="text-xs text-slate-600">Subscribed{renews ? ` · ${club.subscription.cancelAtPeriodEnd ? 'ends' : 'renews'} on ${renews}` : ''}.</p>
+            <p className="text-xs text-slate-600">Subscribed at {priceText}{renews ? ` · ${club.subscription.cancelAtPeriodEnd ? 'ends' : 'renews'} on ${renews}` : ''}.</p>
             {club.subscription?.hasBillingAccount && <button type="button" onClick={() => goTo('/api/club/billing', setBusy, showFlash, onRefresh)} disabled={busy !== ''} className={`w-full ${btn} bg-slate-800`}>Manage billing, card and invoices</button>}
           </>
         )}
@@ -124,12 +134,34 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
         {status === 'canceled' && (
           <>
             <p className="text-xs text-slate-600">Your subscription has ended, so the app is look-only. Your club's data is kept.</p>
-            <button type="button" onClick={() => goTo('/api/club/subscribe', setBusy, showFlash, onRefresh)} disabled={busy !== ''} className={`w-full ${btn}`}>Resubscribe · {priceText}</button>
+            <button type="button" onClick={() => goTo('/api/club/subscribe', setBusy, showFlash, onRefresh)} disabled={busy !== ''} className={`w-full ${btn}`}>Resubscribe · {priceText}{setupText}</button>
           </>
         )}
         {status === 'comped' && <p className="text-xs text-emerald-700">Your club has free access from the app provider. Nothing to pay.</p>}
         {status === 'suspended' && <p className="text-xs text-rose-700">Your club's access has been switched off. Please contact the app provider.</p>}
       </div>
+
+      {/* ---------- Payment requests from the app provider ---------- */}
+      {charges.length > 0 && (
+        <div className={card}>
+          <h3 className="font-semibold text-sm flex items-center gap-1.5"><CreditCard size={14} /> Payments to the App Provider</h3>
+          {openCharges.length > 0 && <p className="text-xs text-slate-600">You've been sent {openCharges.length === 1 ? 'a payment request' : `${openCharges.length} payment requests`}. Pay securely by card on Stripe's page.</p>}
+          {openCharges.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold truncate">{c.description}</p>
+                <p className="text-[11px] text-slate-500">${Number(c.amountNzd).toFixed(2)} · sent {new Date(c.createdAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}</p>
+              </div>
+              <button type="button" onClick={() => payCharge(c.payUrl)} disabled={!c.payUrl} className={`${btn} shrink-0`}>Pay ${Number(c.amountNzd).toFixed(2)}</button>
+            </div>
+          ))}
+          {paidCharges.length > 0 && (
+            <ul className="text-[11px] text-slate-500 space-y-0.5">
+              {paidCharges.slice(0, 5).map((c) => <li key={c.id}>✓ {c.description} · ${Number(c.amountNzd).toFixed(2)} paid {c.paidAt ? new Date(c.paidAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* ---------- Parent payments (Stripe Connect) ---------- */}
       {club.canUse && (

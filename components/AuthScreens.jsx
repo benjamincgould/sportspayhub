@@ -19,8 +19,9 @@ const copyToClipboard = async (text) => {
 function AuthShell({ title, subtitle, children, onBack, club = null }) {
   const platform = useContext(PlatformContext);
   return (
-    <div className="min-h-full flex flex-col bg-slate-50 text-slate-800 font-sans max-w-md mx-auto border-x border-slate-200">
-      <header className="bg-indigo-600 text-white px-5 pt-8 pb-6">
+    <div className="min-h-[100dvh] w-full bg-slate-50 md:bg-slate-100 md:flex md:items-center md:justify-center md:p-8">
+    <div className="min-h-[100dvh] md:min-h-0 flex flex-col bg-slate-50 text-slate-800 font-sans w-full md:max-w-md md:rounded-2xl md:shadow-xl md:overflow-hidden md:border md:border-slate-200">
+      <header className="bg-indigo-600 text-white px-5 pt-[max(2rem,env(safe-area-inset-top))] pb-6">
         <p className="text-xs uppercase tracking-wider text-indigo-200 font-medium flex items-center gap-1.5">
           {club?.logo ? <img src={club.logo} alt="" className="w-6 h-6 rounded bg-white object-contain" /> : <Shield size={12} />}
           {club?.name || platform.name}
@@ -32,6 +33,7 @@ function AuthShell({ title, subtitle, children, onBack, club = null }) {
         {onBack && <button type="button" onClick={onBack} className="text-sm text-slate-600 flex items-center gap-1"><ChevronLeft size={16} /> Back to sign in</button>}
         {children}
       </main>
+    </div>
     </div>
   );
 }

@@ -2049,7 +2049,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // ---------- Render ----------
   return (
-    <div className="relative flex flex-col h-screen bg-slate-50 text-slate-800 font-sans max-w-md mx-auto shadow-2xl overflow-hidden border border-slate-200">
+    <div className="relative flex flex-col h-[100dvh] w-full bg-slate-50 text-slate-800 font-sans overflow-hidden">
 
       {/* DEMO ROLE SWITCHER BAR (demo mode only) */}
       {!remote && <div className="bg-slate-900 text-white p-2 text-xs flex justify-between items-center px-4">
@@ -2062,7 +2062,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       </div>}
 
       {/* HEADER BAR */}
-      <header className="bg-indigo-600 text-white px-5 py-4 flex justify-between items-center shadow-md">
+      <header className="bg-indigo-600 text-white px-5 md:px-8 pb-4 pt-[max(1rem,env(safe-area-inset-top))] flex justify-between items-center shadow-md">
         <div>
           <h1 className="font-bold text-lg flex items-center gap-2 min-w-0">
             {club.branding?.logo && <img src={club.branding.logo} alt="" className="w-7 h-7 rounded-md bg-white object-contain shrink-0" />}
@@ -2110,22 +2110,36 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
       {/* FLASH MESSAGE */}
       {flash && (
-        <div className="absolute top-28 left-4 right-4 z-20 bg-slate-900 text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
+        <div className="absolute top-28 left-4 right-4 md:left-auto md:right-8 md:w-96 z-20 bg-slate-900 text-white text-xs px-3 py-2 rounded-lg shadow-lg flex items-center gap-2">
           <Check size={14} /> {flash}
         </div>
       )}
 
-      {/* MAIN CONTENT AREA (SCROLLABLE) */}
-      <main className="flex-1 overflow-y-auto p-4 pb-24">
-        {remote && !loaded
-          ? <p className="text-sm text-slate-500 text-center pt-10">{serverError ? 'Tap Refresh in a moment, or sign in again.' : 'Loading your club…'}</p>
-          : VIEWS[currentRole][activeTab]?.()}
-      </main>
+      <div className="flex-1 flex min-h-0">
+        {/* SIDE NAVIGATION (tablets and computers) */}
+        <nav className="hidden md:flex flex-col gap-1 w-56 shrink-0 bg-white border-r border-slate-200 p-3 overflow-y-auto" aria-label="Main">
+          {navFor(currentRole, W).map(([tab, Icon, label]) => (
+            <button key={tab} onClick={() => setActiveTab(tab)} aria-current={activeTab === tab ? 'page' : undefined}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left ${activeTab === tab ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+              <Icon size={18} /><span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
-      {/* BOTTOM TAB NAVIGATION BAR */}
-      <nav className="absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 py-2 px-2 flex justify-around items-center">
+        {/* MAIN CONTENT AREA (SCROLLABLE) */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-28 md:pb-8">
+          <div className="max-w-5xl mx-auto">
+            {remote && !loaded
+              ? <p className="text-sm text-slate-500 text-center pt-10">{serverError ? 'Tap Refresh in a moment, or sign in again.' : 'Loading your club…'}</p>
+              : VIEWS[currentRole][activeTab]?.()}
+          </div>
+        </main>
+      </div>
+
+      {/* BOTTOM TAB NAVIGATION BAR (phones) */}
+      <nav className="md:hidden absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] px-2 flex justify-around items-center" aria-label="Main">
         {navFor(currentRole, W).map(([tab, Icon, label]) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`flex flex-col items-center gap-1 px-1 ${activeTab === tab ? 'text-indigo-600' : 'text-slate-400'}`}>
+          <button key={tab} onClick={() => setActiveTab(tab)} aria-current={activeTab === tab ? 'page' : undefined} className={`flex flex-col items-center gap-1 px-1 ${activeTab === tab ? 'text-indigo-600' : 'text-slate-400'}`}>
             <Icon size={20} /><span className="text-[10px] font-medium">{label}</span>
           </button>
         ))}

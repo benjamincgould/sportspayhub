@@ -5,6 +5,8 @@ export const metadata = {
   description: 'Bookings, attendance and payments for sports clubs.',
   referrer: 'no-referrer',
   robots: { index: false, follow: false },
+  // Added to an iPhone's home screen, it opens full screen like a normal app
+  appleWebApp: { capable: true, title: process.env.PLATFORM_NAME || 'Club App', statusBarStyle: 'black-translucent' },
 };
 
 export const viewport = {

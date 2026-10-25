@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startServer } from '../helpers.mjs';
+import { startServer, fakeStripe } from '../helpers.mjs';
 import { totpFor } from '../fake-auth.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,7 @@ const step = (msg) => console.log(`✓ ${msg}`);
 const fail = (msg) => { throw new Error(msg); };
 
 process.env.OWNER_SETUP_SECRET = 'e2e-owner-setup-code-long-enough';
-const app = await startServer({ env: { APP_URL: BASE, PLATFORM_NAME: 'TeamDesk' }, staticDir: path.join(here, 'dist'), port: PORT });
+const app = await startServer({ env: { APP_URL: BASE, PLATFORM_NAME: 'TeamDesk' }, staticDir: path.join(here, 'dist'), port: PORT, stripe: fakeStripe() });
 const linkFor = async (email) => {
   await app.settle();
   const m = app.mailer.outbox.findLast((x) => x.to === email && /#\/(invite|reset)\//.test(x.text));
@@ -109,6 +109,23 @@ try {
   if ((await ownerPage.locator('body').innerText()).includes('Leo Parker')) fail('owner must not see member names');
   step('Owner gives the club free access, without seeing any members');
 
+  // ---------- Owner sets a price and charges the club ----------
+  const clubCard = ownerPage.locator('div.bg-white', { hasText: 'Riverside Rugby' }).first();
+  await clubCard.getByRole('button', { name: 'Price & charges' }).click();
+  await ownerPage.getByLabel('Monthly price (NZD)').fill('39');
+  await ownerPage.getByRole('button', { name: 'Save price' }).click();
+  await ownerPage.getByText('Pricing saved').waitFor();
+  await ownerPage.getByText('$39.00/month (own price)').waitFor();
+  await ownerPage.getByLabel('Amount (NZD)').fill('120');
+  await ownerPage.getByLabel("What it's for").fill('Club set-up and training');
+  await ownerPage.getByRole('button', { name: 'Send payment request' }).click();
+  await ownerPage.getByText(/Payment request for \$120.00 emailed/).waitFor();
+  await ownerPage.getByText('Waiting for payment').waitFor();
+  const reqMail = await (async () => { await app.settle(); return app.mailer.outbox.findLast((m) => m.to === 'dana@riverside.test' && /Payment request/.test(m.subject)); })();
+  if (!reqMail) fail('the coach should be emailed the payment request');
+  await ownerPage.screenshot({ path: `${here}/owner-desktop.png` });
+  step('Owner sets the club\'s own monthly price and sends a $120 payment request; the coach is emailed');
+
   await coach.reload();
   await coach.getByRole('button', { name: 'Grades', exact: true }).click();
   await coach.getByRole('button', { name: 'Add Grade' }).click();
@@ -141,6 +158,16 @@ try {
   await parent.getByText(/Welcome, Mere/).waitFor();
   await parent.getByText(/Player: Tama Fox \(Under 12s\)/).waitFor();
   step("Parent signs in and sees only their own child, in the club's colours");
+
+  await coach.getByRole('button', { name: 'Settings' }).click();
+  await coach.getByText('Payments to the App Provider').waitFor();
+  await coach.getByRole('button', { name: 'Pay $120.00' }).waitFor();
+  await coach.screenshot({ path: `${here}/coach-desktop.png` });
+  await coach.setViewportSize({ width: 390, height: 844 });
+  await coach.getByRole('button', { name: 'Home' }).click();
+  await coach.screenshot({ path: `${here}/coach-phone.png` });
+  await coach.setViewportSize({ width: 1280, height: 800 });
+  step('The coach sees the payment request in Settings with a Pay button');
 
   // ---------- Lost phone: a recovery code ----------
   await coach.getByLabel('Sign out').click();

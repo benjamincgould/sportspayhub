@@ -210,15 +210,33 @@ test('on a brand-new empty database, the app creates its own tables on the first
     const [a, b] = await Promise.all([browser(fresh.base).get('/api/platform'), browser(fresh.base).get('/api/platform')]);
     assert.equal(a.status, 200, a.text);
     assert.equal(b.status, 200, b.text);
-    assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and rowsecurity")).n, 14, 'all tables, locked');
+    assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and not rowsecurity")).n, 0, 'all tables locked');
+    assert.ok((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app'")).n >= 16, 'all tables created');
     assert.equal((await browser(fresh.base).get('/api/platform')).status, 200, 'later requests carry on as normal');
   } finally {
     await fresh.close();
   }
 });
 
-test("the app's built-in copy of the database setup matches supabase/migrations/0001_init.sql", async () => {
+test("the app's built-in copy of the database changes matches supabase/migrations", async () => {
   const fs = await import('node:fs');
-  const { SCHEMA_SQL } = await import('../lib/server/schema-sql.js');
-  assert.equal(SCHEMA_SQL, fs.readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'), 'run: node scripts/build-schema.mjs');
+  const { MIGRATIONS } = await import('../lib/server/schema-sql.js');
+  const files = fs.readdirSync(new URL('../supabase/migrations/', import.meta.url)).filter((f) => f.endsWith('.sql')).sort();
+  assert.deepEqual(MIGRATIONS.map((m) => `${m.id}.sql`), files, 'run: node scripts/build-schema.mjs');
+  for (const m of MIGRATIONS) assert.equal(m.sql, fs.readFileSync(new URL(`../supabase/migrations/${m.id}.sql`, import.meta.url), 'utf8'), m.id);
+});
+
+test('a database set up before migrations were tracked is brought up to date once', async () => {
+  const fresh = await startServer({ emptyDatabase: true });
+  try {
+    const fs = await import('node:fs');
+    // Exactly what the first live deployment did: only the first setup file, no bookkeeping
+    await fresh.query(fs.readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'));
+    assert.equal((await browser(fresh.base).get('/api/platform')).status, 200);
+    const ids = (await fresh.query('select id from app.schema_migrations order by id')).map((r) => r.id);
+    assert.deepEqual(ids, ['0001_init', '0002_platform_charges']);
+    assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and not rowsecurity")).n, 0, 'new tables are locked too');
+  } finally {
+    await fresh.close();
+  }
 });
