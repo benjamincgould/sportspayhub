@@ -221,6 +221,27 @@ try {
   await coach.getByText('Fox family now pays by bank transfer').waitFor();
   step('With both offered, the club (not the parent) sets each family to card or bank; the parent sees one family page');
 
+  // ---------- Session passes ----------
+  await coach.getByRole('button', { name: 'Settings' }).click();
+  await coach.getByLabel('Under 12s: sessions per pass').fill('6');
+  await coach.getByLabel('Under 12s: pass price').fill('60');
+  await coach.getByRole('button', { name: 'Save Under 12s pass' }).click();
+  await coach.getByText('Under 12s: 6-session pass, $60.00').waitFor();
+  await coach.getByRole('button', { name: 'Players', exact: true }).click();
+  if (!(await coach.getByRole('button', { name: 'Give a pass' }).count())) await coach.getByRole('button', { name: /Tama Fox/ }).first().click();
+  await coach.getByRole('button', { name: 'Give a pass' }).click();
+  if (await coach.getByLabel('Number of sessions').inputValue() !== '6') fail('the pass form should start with the grade\'s pass');
+  await coach.getByLabel('Number of sessions').fill('5');
+  await coach.getByLabel('Pass price').fill('55');
+  await coach.getByLabel('Paid by').selectOption('cash');
+  await coach.getByRole('button', { name: 'Give pass' }).click();
+  await coach.getByText('Tama has a 5-session pass').waitFor();
+  await coach.getByText('5 of 5 sessions left').waitFor();
+  await parent.reload();
+  await parent.getByRole('button', { name: 'Payments' }).click();
+  await parent.getByText('5 sessions left').waitFor();
+  step('The coach sets the grade\'s pass (sessions and price) and gives a player a pass; the parent sees the sessions left');
+
   await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();
   await coach.getByRole('button', { name: 'Pay $120.00 by card' }).waitFor();

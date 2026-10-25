@@ -110,6 +110,11 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
   - **Card, through Stripe:** into the club's own Stripe account (a coach taps **Connect Stripe** in Settings). One automatic payment covers all the children. Stripe keeps a small fee from each payment.
   - **Bank transfer:** no fees. Parents see the club's account, their family reference (like `PARKERF12`) and steps to set up one free automatic payment in their banking app. The treasurer or coach taps **Record payment** next to the family as money arrives; that marks the family paid and adds the income to the club's books.
   - Moving a family from card to bank stops their card payments at the end of the period already paid, so nobody pays twice.
+- **Session passes** (for children who don't come every week):
+  - The coach or treasurer sets each group's pass in Settings → **Session Passes**: how many sessions it has and the price.
+  - Parents paying by card can buy one on their Payments page.
+  - The coach or treasurer can also give any child a pass from their record (**Give a pass**): type the number of sessions and the price, and say how it was paid (bank transfer, cash, not paid yet, or free). Money received goes into the books.
+  - Each session the coach marks the child **present** uses one; unticking gives it back. The sessions left show on the attendance list, the child's record and the parent's Payments page. Staff can correct the sessions left, mark an unpaid pass paid, or cancel a pass.
 
 ## Day-to-day admin
 
