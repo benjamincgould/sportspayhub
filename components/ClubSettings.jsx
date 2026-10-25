@@ -251,3 +251,68 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
     </div>
   );
 }
+
+// ---------- How parents pay the club (coach and treasurer) ----------
+
+export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
+  const p = club.payments || {};
+  const [form, setForm] = useState({
+    card: p.card !== false, bank: Boolean(p.bank),
+    bankAccountName: p.bank?.accountName || '', bankAccountNumber: p.bank?.accountNumber || '', instructions: p.bank?.instructions || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await api('/api/club/payment-methods', { method: 'PUT', body: form });
+      onClubChange({ ...club, payments: { ...club.payments, ...res.payments } });
+      showFlash('Payment options saved');
+    } catch (err) {
+      showFlash(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className={card}>
+      <h3 className="font-semibold text-sm flex items-center gap-1.5"><CreditCard size={14} /> How Parents Pay</h3>
+      <p className="text-xs text-slate-500">Parents only see the ways you turn on here.</p>
+
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-1" checked={form.card} onChange={(e) => setForm({ ...form, card: e.target.checked })} />
+        <span className="text-xs">
+          <span className="font-semibold text-sm text-slate-800">Card, through Stripe</span>
+          <span className="block text-slate-500">Automatic and marked paid by itself. Stripe keeps a small fee from each payment (about 2.7% + 30c).{!club.payments?.connected ? ' Needs your club\'s Stripe account connected (below).' : ''}</span>
+        </span>
+      </label>
+
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-1" checked={form.bank} onChange={(e) => setForm({ ...form, bank: e.target.checked })} />
+        <span className="text-xs">
+          <span className="font-semibold text-sm text-slate-800">Bank transfer</span>
+          <span className="block text-slate-500">No fees. Parents see your account and a reference for their child, and can set up a free automatic payment in their banking app. You tick payments off as they arrive.</span>
+        </span>
+      </label>
+
+      {form.bank && (
+        <div className="space-y-2 pl-6">
+          <label className="block text-xs text-slate-500">Account name
+            <input required maxLength={80} value={form.bankAccountName} onChange={(e) => setForm({ ...form, bankAccountName: e.target.value })} placeholder="e.g. Riverside Rugby Club Inc" className={field} />
+          </label>
+          <label className="block text-xs text-slate-500">Account number
+            <input required inputMode="numeric" value={form.bankAccountNumber} onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })} placeholder="12-3456-0123456-00" className={field} />
+          </label>
+          <label className="block text-xs text-slate-500">Note for parents (optional)
+            <input maxLength={200} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="e.g. Please use your child's reference" className={field} />
+          </label>
+        </div>
+      )}
+
+      {!form.card && !form.bank && <p className="text-xs text-amber-700">Choose at least one way to pay.</p>}
+      <button type="submit" disabled={saving || (!form.card && !form.bank)} className={`w-full ${btn}`}>{saving ? 'Saving…' : 'Save payment options'}</button>
+    </form>
+  );
+}

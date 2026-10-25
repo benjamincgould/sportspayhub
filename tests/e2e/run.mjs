@@ -169,6 +169,32 @@ try {
   await parent.getByText(/Player: Tama Fox \(Under 12s\)/).waitFor();
   step("Parent signs in and sees only their own child, in the club's colours");
 
+  // ---------- The club switches to bank transfer ----------
+  await coach.getByRole('button', { name: 'Settings' }).click();
+  const methodsCard = coach.locator('form', { hasText: 'How Parents Pay' });
+  await methodsCard.getByLabel(/Card, through Stripe/).uncheck();
+  await methodsCard.getByLabel(/Bank transfer/).check();
+  await methodsCard.getByLabel('Account name').fill('Riverside Rugby Club Inc');
+  await methodsCard.getByLabel('Account number').fill('03 1234 0123456 00');
+  await methodsCard.getByRole('button', { name: 'Save payment options' }).click();
+  await coach.getByText('Payment options saved').waitFor();
+  await parent.reload();
+  await parent.getByRole('button', { name: 'Payments' }).click();
+  await parent.getByText('Pay by bank transfer').waitFor();
+  await parent.getByText('03-1234-0123456-00').waitFor();
+  await parent.getByText(/^TAMAFOX\d+$/).first().waitFor();
+  if (await parent.getByRole('button', { name: /card payments/ }).count()) fail('card payments should be hidden when the club only takes bank transfers');
+  await parent.screenshot({ path: `${here}/parent-bank.png`, fullPage: true });
+  step('Coach switches the club to bank transfer only; the parent sees the account, their reference and automatic-payment steps');
+
+  await coach.getByRole('button', { name: 'Home' }).click();
+  await coach.getByRole('button', { name: 'Record payment' }).first().click();
+  await coach.getByLabel(/Amount received for Tama Fox/).fill('20');
+  await coach.getByRole('button', { name: 'Mark paid' }).click();
+  await coach.getByText('Tama Fox marked paid ($20.00)').waitFor();
+  await coach.getByText(/last paid/).first().waitFor();
+  step('The coach records the bank payment: marked paid, and the income goes in the books');
+
   await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();
   await coach.getByRole('button', { name: 'Pay $120.00 by card' }).waitFor();

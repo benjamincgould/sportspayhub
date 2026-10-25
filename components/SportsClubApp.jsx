@@ -6,7 +6,7 @@ import {
 } from './icons';
 import { api } from './api';
 import { AccountSecurity, TeamAccess } from './AuthScreens';
-import { ClubSettings } from './ClubSettings';
+import { ClubSettings, PaymentMethodsCard } from './ClubSettings';
 import { applyBrandColour } from './brand';
 
 // The app runs two ways:
@@ -386,6 +386,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const [newAthlete, setNewAthlete] = useState(null);
   const [inviteRequest, setInviteRequest] = useState(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [recording, setRecording] = useState(null); // { id, amount } while recording a bank payment
   const [confirmDeleteAthlete, setConfirmDeleteAthlete] = useState(null);
 
   // Parents: the child they're looking at (siblings switch with the picker)
@@ -1108,6 +1109,11 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     );
   };
 
+  // How this club takes payments (card, bank or both; the demo shows card)
+  const cardOn = !remote || club.payments?.card !== false;
+  const bankDetails = remote ? club.payments?.bank || null : null;
+  const payRef = parentAthlete ? (parentAthlete.payRef || `${String(parentAthlete.name || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10)}${parentAthlete.id}`) : '';
+
   const renderPayments = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -1119,7 +1125,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <p className="text-xs text-indigo-100">Current Plan · {parentSquad.name}</p>
         <p className="text-lg font-bold">{FREQ_TITLE[parentAthlete.frequency]} ({money(priceFor(parentAthlete))}/{FREQ_LABEL[parentAthlete.frequency]})</p>
         <p className="text-xs mt-2 text-indigo-100">
-          {parentAthlete.cardLast4 ? `Card ending in •••• ${parentAthlete.cardLast4}` : 'No card on file'}
+          {parentAthlete.cardLast4 ? `Card ending in •••• ${parentAthlete.cardLast4}` : cardOn ? 'No card on file' : `Paying by bank transfer · reference ${payRef}`}
           {parentAthlete.nextBillingDate && ` · next payment ${fmtShort(parentAthlete.nextBillingDate)}`}
         </p>
       </div>
@@ -1150,23 +1156,55 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         )}
       </div>
 
-      {parentAthlete.hasSubscription ? (
+      {bankDetails && (
+        <div className={`${card} space-y-2 text-sm`}>
+          <h3 className="font-semibold text-sm">Pay by bank transfer</h3>
+          <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
+            <p className="flex justify-between gap-2"><span className="text-slate-500">Account name</span><span className="font-medium text-right select-all">{bankDetails.accountName}</span></p>
+            <p className="flex justify-between gap-2"><span className="text-slate-500">Account number</span><span className="font-mono font-medium select-all">{bankDetails.accountNumber}</span></p>
+            <p className="flex justify-between gap-2"><span className="text-slate-500">Reference</span><span className="font-mono font-medium select-all">{payRef}</span></p>
+            <p className="flex justify-between gap-2"><span className="text-slate-500">Amount</span><span className="font-medium">{money(priceFor(parentAthlete))} {FREQ_TITLE[parentAthlete.frequency].toLowerCase()}</span></p>
+          </div>
+          <button onClick={() => copyText(`${bankDetails.accountNumber}`, 'Account number')} className="w-full text-xs bg-slate-100 text-slate-700 py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Copy size={12} /> Copy account number</button>
+          <div className="text-xs text-slate-600 space-y-1">
+            <p className="font-semibold text-slate-700">Set it and forget it: a free automatic payment</p>
+            <ol className="list-decimal pl-4 space-y-0.5">
+              <li>In your banking app, choose <span className="font-medium">Pay someone</span> or <span className="font-medium">Automatic payment</span>.</li>
+              <li>Enter the account name and number above.</li>
+              <li>Put <span className="font-mono font-medium">{payRef}</span> in the reference, so the club knows it's for {parentAthlete.name}.</li>
+              <li>Set it to repeat <span className="font-medium">{FREQ_TITLE[parentAthlete.frequency].toLowerCase()}</span> for {money(priceFor(parentAthlete))}.</li>
+            </ol>
+            {bankDetails.instructions && <p className="text-slate-500">{bankDetails.instructions}</p>}
+            <p className="text-[11px] text-slate-400">The club ticks off payments as they arrive. If you change how often you pay above, update your automatic payment too.</p>
+          </div>
+        </div>
+      )}
+
+      {cardOn && (parentAthlete.hasSubscription ? (
         <button onClick={openBillingPortal} disabled={busy === 'portal'} className={`w-full ${primaryBtn} bg-slate-800`}>
           <CreditCard size={14} /> {busy === 'portal' ? 'Opening…' : 'Update card / manage billing'}
         </button>
       ) : (
         <button onClick={startAutoPay} disabled={busy === 'autopay'} className={`w-full ${primaryBtn}`}>
-          <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `Set up automatic ${FREQ_TITLE[parentAthlete.frequency].toLowerCase()} payments`}
+          <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `${bankDetails ? 'Or pay by card: ' : ''}set up automatic ${FREQ_TITLE[parentAthlete.frequency].toLowerCase()} card payments`}
+        </button>
+      ))}
+
+      {cardOn && (
+        <button onClick={buyPass} disabled={busy === 'pass'} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm shadow-sm disabled:opacity-50">
+          {busy === 'pass' ? 'Opening secure checkout…' : `Buy 10-Session Pass by card (${money(parentSquad.pass)})`}
         </button>
       )}
+      {!cardOn && bankDetails && (
+        <p className="text-[11px] text-slate-500 text-center">For a 10-session pass ({money(parentSquad.pass)}), pay the same account with reference <span className="font-mono">{payRef}</span>.</p>
+      )}
 
-      <button onClick={buyPass} disabled={busy === 'pass'} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm shadow-sm disabled:opacity-50">
-        {busy === 'pass' ? 'Opening secure checkout…' : `Buy 10-Session Pass (${money(parentSquad.pass)})`}
-      </button>
-
-      <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
-        <Shield size={11} /> {!remote ? 'Demo mode — no real payments are taken.' : paymentsConnected ? 'Payments are processed securely by Stripe. Card details never touch this app.' : "Online payments aren't switched on yet."}
-      </p>
+      {cardOn && (
+        <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
+          <Shield size={11} /> {!remote ? 'Demo mode — no real payments are taken.' : paymentsConnected ? 'Card payments are processed securely by Stripe. Card details never touch this app.' : "Card payments aren't switched on yet."}
+        </p>
+      )}
+      {!cardOn && !bankDetails && <p className="text-xs text-slate-500 text-center">Ask your club how to pay.</p>}
     </div>
   );
 
@@ -1231,6 +1269,31 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     </>
   );
 
+  // A payment that arrived outside the app (usually a bank transfer)
+  const recordPayment = async (a) => {
+    const amount = Number(recording?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) { showFlash('Enter the amount received'); return; }
+    if (!remote) {
+      updateAthlete(a.id, { status: 'paid', lastPaidOn: todayISO });
+      setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Subscription', description: `${a.name} - Bank transfer`, amount, gst: true }]);
+      setRecording(null);
+      showFlash(`${a.name} marked paid (${money(amount)})`);
+      return;
+    }
+    setBusy('record');
+    try {
+      const res = await api(`/api/athletes/${a.id}/payment`, { method: 'POST', body: { amount } });
+      replaceAthlete(res.athlete);
+      setTransactions((prev) => [...prev, res.transaction]);
+      setRecording(null);
+      showFlash(`${a.name} marked paid (${money(amount)})`);
+    } catch (e) {
+      if (!e.signedOut) showFlash(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const renderReconciliation = () => (
     <div className={card}>
       <div className="flex justify-between items-center mb-3">
@@ -1242,9 +1305,12 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
           <div className="flex justify-between items-center">
             <div>
               <p className="font-medium">{a.name}</p>
-              <p className="text-xs text-slate-400">{squadById(a.squadId)?.name} · {a.autoDebit ? `auto-pay ${a.frequency}` : 'no auto-pay'}</p>
+              <p className="text-xs text-slate-400">{squadById(a.squadId)?.name} · {a.autoDebit ? `card auto-pay ${a.frequency}` : `ref ${a.payRef || a.id}`}{a.lastPaidOn ? ` · last paid ${fmtShort(a.lastPaidOn)}` : ''}</p>
             </div>
             <div className="flex items-center gap-2">
+              {!a.hasSubscription && (
+                <button onClick={() => setRecording(recording?.id === a.id ? null : { id: a.id, amount: String(priceFor(a) || '') })} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-medium">Record payment</button>
+              )}
               {a.status === 'overdue' && (
                 <button onClick={() => setReminderFor(reminderFor === a.id ? null : a.id)} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded font-medium">Remind</button>
               )}
@@ -1253,6 +1319,17 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
               </span>
             </div>
           </div>
+          {recording?.id === a.id && (
+            <form onSubmit={(e) => { e.preventDefault(); recordPayment(a); }} className="mt-2 p-3 bg-emerald-50 rounded-lg space-y-2">
+              <p className="text-xs text-emerald-900">Money received from {a.parent || a.name}{a.payRef ? ` (reference ${a.payRef})` : ''}:</p>
+              <div className="flex gap-2">
+                <input inputMode="decimal" aria-label={`Amount received for ${a.name}`} value={recording.amount} onChange={(e) => setRecording({ ...recording, amount: e.target.value })} className={`${inputCls} mt-0 flex-1`} />
+                <button type="submit" disabled={busy === 'record'} className="px-3 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{busy === 'record' ? 'Saving…' : 'Mark paid'}</button>
+                <button type="button" onClick={() => setRecording(null)} className="px-3 bg-white text-slate-600 rounded-lg text-xs font-semibold border border-slate-200">Cancel</button>
+              </div>
+              <p className="text-[11px] text-emerald-800">Marks them paid and adds the income to your books.</p>
+            </form>
+          )}
           {reminderFor === a.id && (
             <div className="mt-2 p-3 bg-slate-50 rounded-lg space-y-2">
               <p className="text-xs text-slate-500 whitespace-pre-line">{fillTemplate(smsTemplate, a)}</p>
@@ -1597,6 +1674,11 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <button onClick={saveSettings} className={`w-full ${primaryBtn}`}><Check size={12} /> Save settings</button>
       )}
     </div>
+  );
+
+  // How parents pay the club (coach and treasurer)
+  const renderPaymentMethods = () => remote && (
+    <PaymentMethodsCard club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} />
   );
 
   // Server mode: account security for everyone, plus team & family access for staff
@@ -1997,6 +2079,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         </div>
       )}
       {remote && <ClubSettings club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} onRefresh={loadFromServer} />}
+      {renderPaymentMethods()}
       {renderTeamAccess()}
       {renderFinanceSettings()}
       {renderAccount()}
@@ -2039,7 +2122,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       home: () => <div className="space-y-4">{renderFinanceStats()}{renderReconciliation()}</div>,
       athletes: renderAthletes,
       financials: renderReports,
-      settings: () => <div className="space-y-4"><h2 className="font-bold text-base">Settings</h2>{renderTeamAccess()}{renderFinanceSettings()}{renderAccount()}</div>,
+      settings: () => <div className="space-y-4"><h2 className="font-bold text-base">Settings</h2>{renderPaymentMethods()}{renderTeamAccess()}{renderFinanceSettings()}{renderAccount()}</div>,
     },
     coach: {
       home: renderCoachHome, attendance: renderAttendance, athletes: renderAthletes,
