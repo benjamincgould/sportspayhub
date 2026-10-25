@@ -41,25 +41,22 @@ async function setUp(url, email) {
 const boot = async (who) => (await who.get('/api/bootstrap')).json;
 const series = () => dev.sessions[0].seriesId;
 
-test('groups start with a 10-session pass; the coach and treasurer can change the sessions and price', async () => {
-  assert.equal(dev.passSessions, 10);
-  assert.equal((await parent.put(`/api/squads/${dev.id}/pass`, { sessions: 5, price: 50 })).status, 403, 'not parents');
-  assert.equal((await treasurer.put(`/api/squads/${dev.id}/pass`, { sessions: 0, price: 50 })).status, 400);
-  assert.equal((await treasurer.put(`/api/squads/${dev.id}/pass`, { sessions: 8, price: -1 })).status, 400);
-  const r = await treasurer.put(`/api/squads/${dev.id}/pass`, { sessions: 8, price: 96 });
+test('one pass for the whole club: the coach and treasurer set the sessions and price', async () => {
+  assert.equal((await parent.post('/api/checkout/pass', { athleteId: kid.id })).status, 409, 'no pass set up yet');
+  assert.equal((await parent.put('/api/club/pass', { sessions: 5, price: 50 })).status, 403, 'not parents');
+  assert.equal((await treasurer.put('/api/club/pass', { sessions: 0, price: 50 })).status, 400);
+  assert.equal((await treasurer.put('/api/club/pass', { sessions: 8, price: 0 })).status, 400);
+  const r = await treasurer.put('/api/club/pass', { sessions: 8, price: 96 });
   assert.equal(r.status, 200, r.text);
-  assert.equal(r.json.passSessions, 8);
-  assert.equal(r.json.pass, 96);
-  assert.equal(r.json.weekly, dev.weekly, 'nothing else changes');
-  const c = await coach.put(`/api/squads/${dev.id}/pass`, { sessions: 12, price: 120 });
-  assert.equal(c.json.passSessions, 12);
-  // Editing the group in the timetable screen keeps the pass sessions
-  const { passSessions, ...rest } = c.json;
-  assert.equal((await coach.put(`/api/squads/${dev.id}`, { ...rest, name: 'Development' })).json.passSessions, 12);
-  dev = (await boot(coach)).squads.find((s) => s.id === dev.id);
+  assert.deepEqual(r.json.pass, { sessions: 8, price: 96 });
+  assert.deepEqual((await coach.put('/api/club/pass', { sessions: 12, price: 120 })).json.pass, { sessions: 12, price: 120 });
+  assert.deepEqual((await boot(parent)).settings.pass, { sessions: 12, price: 120 }, 'parents see the pass');
+  // Groups only have weekly, fortnightly and monthly prices now
+  const { id, pass, passSessions, ...rest } = dev;
+  assert.equal((await coach.put(`/api/squads/${dev.id}`, { ...rest, name: 'Development' })).status, 200);
 });
 
-test('parents buy the group\'s pass by card; Stripe confirming it gives the child the pass', async () => {
+test('parents buy the club\'s pass by card, whatever the group; Stripe confirming it gives the child the pass', async () => {
   const r = await parent.post('/api/checkout/pass', { athleteId: kid.id });
   assert.equal(r.status, 200, r.text);
   const call = stripe.calls.findLast((x) => x.name === 'checkout.sessions.create');
@@ -133,4 +130,17 @@ test('passes can be cancelled, and other clubs can\'t touch them', async () => {
   assert.equal((await coach2.put(`/api/squads/${dev.id}/pass`, { sessions: 5, price: 1 })).status, 404);
   assert.equal((await treasurer.put(`/api/passes/${p.id}`, { status: 'cancelled' })).json.pass.status, 'cancelled');
   assert.ok(!(await boot(coach)).passes.some((x) => x.id === p.id), 'cancelled passes are hidden');
+});
+
+test('clubs choose any financial year start (charities, societies and companies differ)', async () => {
+  for (const ok of ['10-01', '07-01', '02-28', '12-31']) {
+    const r = await treasurer.put('/api/settings', { financialYearStart: ok });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.json.financialYearStart, ok);
+  }
+  for (const bad of ['02-30', '13-01', '00-10', '4-1', 'April']) {
+    assert.equal((await treasurer.put('/api/settings', { financialYearStart: bad })).status, 400, bad);
+  }
+  assert.equal((await parent.put('/api/settings', { financialYearStart: '01-01' })).status, 403);
+  assert.equal((await boot(parent)).settings.financialYearStart, '12-31');
 });

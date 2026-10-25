@@ -202,6 +202,7 @@ test('club fees: a club connects its own Stripe account and parent payments go t
   const kid = (await coach.post('/api/athletes', { name: 'Pay Kid', squadId: squad.id, email: 'fam@pay.test' })).json.athlete;
   const invite = await coach.post('/api/users/invite', { email: 'fam@pay.test', role: 'parent', athleteIds: [kid.id] });
   const parent = await finishSetup(await emailedLink(app, 'fam@pay.test'), 'fam@pay.test');
+  await coach.put('/api/club/pass', { sessions: 10, price: 100 });
 
   assert.equal((await parent.post('/api/checkout/pass', { athleteId: kid.id })).status, 503, 'no payments until the club connects Stripe');
   const connect = await coach.post('/api/club/connect');

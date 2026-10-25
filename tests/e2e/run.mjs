@@ -143,7 +143,7 @@ try {
   const groupForm = coach.locator('div', { has: coach.getByText('New Grade') }).last();
   const gi = groupForm.locator('input');
   await gi.nth(0).fill('Under 12s');
-  for (const n of [5, 6, 7, 8]) await gi.nth(n).fill('20');
+  for (const n of [5, 6, 7]) await gi.nth(n).fill('20');
   await groupForm.getByRole('button', { name: 'Create Grade' }).click();
   await coach.getByText(/Grade added/).waitFor();
   await coach.getByRole('button', { name: 'Add', exact: true }).click();
@@ -223,14 +223,18 @@ try {
 
   // ---------- Session passes ----------
   await coach.getByRole('button', { name: 'Settings' }).click();
-  await coach.getByLabel('Under 12s: sessions per pass').fill('6');
-  await coach.getByLabel('Under 12s: pass price').fill('60');
-  await coach.getByRole('button', { name: 'Save Under 12s pass' }).click();
-  await coach.getByText('Under 12s: 6-session pass, $60.00').waitFor();
+  await coach.getByLabel('Sessions per pass').fill('6');
+  await coach.getByLabel('Price of a pass').fill('60');
+  await coach.getByRole('button', { name: 'Save pass' }).click();
+  await coach.getByText('Pass saved: 6 sessions for $60.00').waitFor();
+  await coach.getByLabel('Financial year start month').selectOption('7');
+  await coach.getByText(/Your year runs 1 July to 30 June/).waitFor();
+  await coach.getByRole('button', { name: 'Save settings' }).click();
+  await coach.getByText('Settings saved').waitFor();
   await coach.getByRole('button', { name: 'Players', exact: true }).click();
   if (!(await coach.getByRole('button', { name: 'Give a pass' }).count())) await coach.getByRole('button', { name: /Tama Fox/ }).first().click();
   await coach.getByRole('button', { name: 'Give a pass' }).click();
-  if (await coach.getByLabel('Number of sessions').inputValue() !== '6') fail('the pass form should start with the grade\'s pass');
+  if (await coach.getByLabel('Number of sessions').inputValue() !== '6') fail('the pass form should start with the club\'s pass');
   await coach.getByLabel('Number of sessions').fill('5');
   await coach.getByLabel('Pass price').fill('55');
   await coach.getByLabel('Paid by').selectOption('cash');
@@ -240,7 +244,7 @@ try {
   await parent.reload();
   await parent.getByRole('button', { name: 'Payments' }).click();
   await parent.getByText('5 sessions left').waitFor();
-  step('The coach sets the grade\'s pass (sessions and price) and gives a player a pass; the parent sees the sessions left');
+  step('The coach sets the club\'s pass (sessions and price) and a 1 July financial year, then gives a player a pass; the parent sees the sessions left');
 
   await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();

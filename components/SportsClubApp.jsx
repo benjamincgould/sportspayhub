@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Home, Calendar, CreditCard, User, Settings, Users, DollarSign, CheckSquare, Layers,
   FileText, Plus, Edit2, Check, X, Shield, Phone, Mail, Printer, Download, RefreshCw,
@@ -202,7 +202,7 @@ function fyStartFor(date, fyStart) {
 // Current reporting window (2, 6 or 12 months) aligned to the financial year
 function reportWindow(date, fyStart, months) {
   const fy = fyStartFor(date, fyStart);
-  const monthsIn = (date.getFullYear() - fy.getFullYear()) * 12 + (date.getMonth() - fy.getMonth());
+  const monthsIn = (date.getFullYear() - fy.getFullYear()) * 12 + (date.getMonth() - fy.getMonth()) - (date.getDate() < fy.getDate() ? 1 : 0);
   const offset = Math.floor(monthsIn / months) * months;
   const start = new Date(fy.getFullYear(), fy.getMonth() + offset, fy.getDate());
   const end = new Date(start.getFullYear(), start.getMonth() + months, start.getDate() - 1);
@@ -391,9 +391,11 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const [recording, setRecording] = useState(null); // { id, amount } while recording a family's bank payment
   const [familiesState, setFamilies] = useState([]);
   const [passes, setPasses] = useState(remote ? [] : DEMO_PASSES);
+  const flashTimer = useRef(null);
   const [passForm, setPassForm] = useState(null);     // giving a child a pass: { athleteId, sessions, price, paidBy }
   const [passEdit, setPassEdit] = useState(null);     // changing sessions left: { id, left }
-  const [passDrafts, setPassDrafts] = useState({});   // group pass settings being edited  // server mode: families (children billed together)
+  const [clubPass, setClubPass] = useState(remote ? null : { sessions: 10, price: 130 }); // the club's pass: { sessions, price }
+  const [passDraft, setPassDraft] = useState(null);   // the pass settings being edited  // server mode: families (children billed together)
   const [profileDrafts, setProfileDrafts] = useState({}); // parent: unsaved profile edits, per child
   const [confirmDeleteAthlete, setConfirmDeleteAthlete] = useState(null);
 
@@ -425,7 +427,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   };
   const families = remote ? familiesState : demoFamilies();
   const membersOf = (f) => athletes.filter((a) => f.athleteIds.includes(a.id));
-  const passSessionsOf = (sq) => sq?.passSessions || 10;
   const passesFor = (athleteId) => passes.filter((p) => p.athleteId === athleteId && p.status === 'active');
   const passLeft = (athleteId) => passesFor(athleteId).reduce((sum, p) => sum + p.left, 0);
   const hasPass = (athleteId) => passesFor(athleteId).length > 0;
@@ -451,7 +452,12 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const todaysSessions = sessionsAcrossSquads(todayISO);
 
   // ---------- Actions ----------
-  const showFlash = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 3500); };
+  // Each new message gets its full time on screen (an older message's timer doesn't clear it)
+  const showFlash = (msg) => {
+    clearTimeout(flashTimer.current);
+    setFlash(msg);
+    flashTimer.current = setTimeout(() => setFlash(''), 3500);
+  };
   const updateAthlete = (id, patch) => setAthletes((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   const replaceAthlete = (a) => setAthletes((prev) => prev.map((x) => (x.id === a.id ? a : x)));
   // A family changed: update it, and the payment details shown on each of its children
@@ -480,6 +486,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       setRegularCounts(d.regularCounts);
       setPaymentsConnected(Boolean(d.payments?.connected));
       if (d.settings.financialYearStart) setFinancialYearStart(d.settings.financialYearStart);
+      setClubPass(d.settings.pass || null);
       if (d.settings.smsTemplate !== undefined) setSmsTemplate(d.settings.smsTemplate);
       if (d.settings.emailTemplate !== undefined) setEmailTemplate(d.settings.emailTemplate);
       if (d.me) updateUser?.(d.me);
@@ -720,14 +727,15 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // A session pass is for one child
   const buyPass = (a) => {
-    const sq = squadById(a.squadId);
+    if (!clubPass) return;
     if (!remote) {
+      const { sessions, price } = clubPass;
       setTransactions((prev) => [...prev, {
         id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass',
-        description: `${a.name} - ${passSessionsOf(sq)}-Session Pass (Card)`, amount: sq.pass, gst: true,
+        description: `${a.name} - ${sessions}-Session Pass (Card)`, amount: price, gst: true,
       }]);
-      setPasses((prev) => [...prev, { id: Date.now(), athleteId: a.id, sessions: passSessionsOf(sq), used: 0, left: passSessionsOf(sq), price: sq.pass, paidBy: 'card', status: 'active', issuedOn: todayISO }]);
-      showFlash(`${passSessionsOf(sq)}-session pass purchased (${money(sq.pass)}) — demo only`);
+      setPasses((prev) => [...prev, { id: Date.now(), athleteId: a.id, sessions, used: 0, left: sessions, price, paidBy: 'card', status: 'active', issuedOn: todayISO }]);
+      showFlash(`${sessions}-session pass purchased (${money(price)}) — demo only`);
       return;
     }
     redirectTo(`pass-${a.id}`, '/api/checkout/pass', { athleteId: a.id });
@@ -837,7 +845,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     return saved;
   };
 
-  const blankSquadForm = { mode: 'create', name: '', level: '', description: '', location: 'Main Pool', capacity: '', coach: '', weekly: '', fortnightly: '', monthly: '', pass: '', passSessions: '10' };
+  const blankSquadForm = { mode: 'create', name: '', level: '', description: '', location: 'Main Pool', capacity: '', coach: '', weekly: '', fortnightly: '', monthly: '' };
   const startCreateSquad = () => { setSessionForm(null); setSquadForm(blankSquadForm); };
   const startEditSquad = (s) => {
     setSessionForm(null);
@@ -845,24 +853,21 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     setSquadForm({
       mode: 'edit', id: s.id, name: s.name, level: s.level || '', description: s.description || '', location: s.location || '',
       capacity: s.capacity == null ? '' : String(s.capacity), coach: s.coach || '',
-      weekly: String(s.weekly), fortnightly: String(s.fortnightly), monthly: String(s.monthly), pass: String(s.pass),
-      passSessions: String(passSessionsOf(s)),
+      weekly: String(s.weekly), fortnightly: String(s.fortnightly), monthly: String(s.monthly),
     });
   };
 
   const saveSquadForm = async () => {
     const f = squadForm;
-    const prices = ['weekly', 'fortnightly', 'monthly', 'pass'].map((k) => parseFloat(f[k]));
+    const prices = ['weekly', 'fortnightly', 'monthly'].map((k) => parseFloat(f[k]));
     if (!f.name.trim()) { showFlash(`Give the ${lc(W.group)} a name`); return; }
-    if (prices.some((n) => isNaN(n) || n < 0)) { showFlash('Enter all four prices'); return; }
+    if (prices.some((n) => isNaN(n) || n < 0)) { showFlash('Enter all three prices'); return; }
     const capacity = f.capacity === '' ? null : parseInt(f.capacity, 10);
     if (capacity !== null && (isNaN(capacity) || capacity < 1)) { showFlash('Capacity must be a number, or leave it blank'); return; }
-    const [weekly, fortnightly, monthly, pass] = prices;
-    const passSessions = f.passSessions === '' || f.passSessions == null ? 10 : parseInt(f.passSessions, 10);
-    if (!Number.isInteger(passSessions) || passSessions < 1 || passSessions > 500) { showFlash('Sessions per pass must be a whole number from 1 to 500'); return; }
+    const [weekly, fortnightly, monthly] = prices;
     const details = {
       name: f.name.trim(), level: f.level.trim(), description: f.description.trim(), location: f.location.trim(),
-      capacity, coach: f.coach.trim(), weekly, fortnightly, monthly, pass, passSessions,
+      capacity, coach: f.coach.trim(), weekly, fortnightly, monthly,
     };
     setBusy('squad');
     try {
@@ -1320,7 +1325,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <div className={`${card} space-y-2`}>
           <h3 className="font-semibold text-sm">Session passes</h3>
           {kids.map((k) => {
-            const sq = squadById(k.squadId);
             const mine = passesFor(k.id);
             const first = k.name.split(' ')[0];
             return (
@@ -1331,17 +1335,16 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                     {mine.length ? `${passLeft(k.id)} session${passLeft(k.id) === 1 ? '' : 's'} left` : 'No pass'}
                   </span>
                 </p>
-                {sq && (showCard ? (
+                {clubPass && showCard && (
                   <button onClick={() => buyPass(k)} disabled={busy === `pass-${k.id}`} className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs disabled:opacity-50">
-                    {busy === `pass-${k.id}` ? 'Opening secure checkout…' : `Buy ${first} a pass: ${passSessionsOf(sq)} sessions by card (${money(sq.pass)})`}
+                    {busy === `pass-${k.id}` ? 'Opening secure checkout…' : `Buy ${first} a pass: ${clubPass.sessions} sessions by card (${money(clubPass.price)})`}
                   </button>
-                ) : (
-                  <p className="text-xs text-slate-500 flex justify-between gap-2"><span>{passSessionsOf(sq)}-session pass · {sq.name}</span><span className="font-medium">{money(sq.pass)}</span></p>
-                ))}
+                )}
               </div>
             );
           })}
-          {!showCard && showBank && <p className="text-[11px] text-slate-500">To buy one, pay the same account with reference <span className="font-mono">{f.reference}</span> and let the club know which child it's for. The club adds the pass for you.</p>}
+          {clubPass && !showCard && <p className="text-xs text-slate-600 flex justify-between gap-2"><span>A pass: {clubPass.sessions} sessions</span><span className="font-medium">{money(clubPass.price)}</span></p>}
+          {clubPass && !showCard && showBank && <p className="text-[11px] text-slate-500">To buy one, pay the same account with reference <span className="font-mono">{f.reference}</span> and let the club know which child it's for. The club adds the pass for you.</p>}
         </div>
 
         <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
@@ -1725,9 +1728,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   // ----- Session passes (coach and treasurer) -----
 
   const startPassForm = (a) => {
-    const sq = squadById(a.squadId);
     setPassEdit(null);
-    setPassForm({ athleteId: a.id, sessions: String(passSessionsOf(sq)), price: String(sq?.pass ?? ''), paidBy: bankDetailsOn ? 'bank' : 'cash' });
+    setPassForm({ athleteId: a.id, sessions: String(clubPass?.sessions ?? 10), price: String(clubPass?.price ?? ''), paidBy: bankDetailsOn ? 'bank' : 'cash' });
   };
 
   const issuePass = async (a) => {
@@ -1856,53 +1858,47 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     );
   };
 
-  // Each group's pass: how many sessions and the price
-  const savePassSettings = async (sq) => {
-    const d = passDrafts[sq.id];
-    const sessions = parseInt(d.sessions, 10);
-    const price = parseFloat(d.price);
+  // The club's pass: how many sessions and the price (the same for every group)
+  const savePassSettings = async () => {
+    const sessions = parseInt(passDraft.sessions, 10);
+    const price = parseFloat(passDraft.price);
     if (!Number.isInteger(sessions) || sessions < 1 || sessions > 500) { showFlash('Sessions per pass must be 1 to 500'); return; }
-    if (!Number.isFinite(price) || price < 0) { showFlash('Enter a price'); return; }
-    let next = { ...sq, passSessions: sessions, pass: price };
+    if (!Number.isFinite(price) || price <= 0) { showFlash('Enter the price of a pass'); return; }
+    let next = { sessions, price };
     if (remote) {
-      setBusy(`passset-${sq.id}`);
+      setBusy('passset');
       try {
-        next = await api(`/api/squads/${sq.id}/pass`, { method: 'PUT', body: { sessions, price } });
+        next = (await api('/api/club/pass', { method: 'PUT', body: { sessions, price } })).pass;
       } catch (e) {
         if (!e.signedOut) showFlash(e.message);
-        setBusy('');
         return;
+      } finally {
+        setBusy('');
       }
-      setBusy('');
     }
-    setSquads((prev) => prev.map((x) => (x.id === sq.id ? next : x)));
-    setPassDrafts((prev) => { const c = { ...prev }; delete c[sq.id]; return c; });
-    showFlash(`${sq.name}: ${sessions}-session pass, ${money(price)}`);
+    setClubPass(next);
+    setPassDraft(null);
+    showFlash(`Pass saved: ${sessions} sessions for ${money(price)}`);
   };
 
-  const renderPassSettings = () => (
-    <div className={`${card} space-y-3`}>
-      <h3 className="font-semibold text-sm flex items-center gap-1.5"><FileText size={14} /> Session Passes</h3>
-      <p className="text-xs text-slate-500">For {lc(W.members)} who don't come every week. Set how many sessions a pass has and its price for each {lc(W.group)}. Parents paying by card can buy one; you can also give one to any {lc(W.member)} from their record in {W.members}.</p>
-      {squads.length === 0 && <p className="text-xs text-slate-400">Add a {lc(W.group)} first.</p>}
-      {squads.map((sq) => {
-        const d = passDrafts[sq.id] || { sessions: String(passSessionsOf(sq)), price: String(sq.pass ?? '') };
-        const set = (k) => (e) => setPassDrafts((prev) => ({ ...prev, [sq.id]: { ...d, [k]: e.target.value } }));
-        return (
-          <div key={sq.id} className="pt-2 border-t border-slate-100">
-            <p className="text-sm font-medium">{sq.name}</p>
-            <div className="flex gap-2 items-end">
-              <Field label="Sessions"><input type="number" min="1" max="500" aria-label={`${sq.name}: sessions per pass`} className={inputCls} value={d.sessions} onChange={set('sessions')} /></Field>
-              <Field label="Price ($)"><input type="number" step="0.01" min="0" aria-label={`${sq.name}: pass price`} className={inputCls} value={d.price} onChange={set('price')} /></Field>
-              {passDrafts[sq.id] && (
-                <button onClick={() => savePassSettings(sq)} aria-label={`Save ${sq.name} pass`} disabled={busy === `passset-${sq.id}`} className={`${primaryBtn} py-2 px-3 shrink-0`}><Check size={12} /> Save</button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  const renderPassSettings = () => {
+    const d = passDraft || { sessions: String(clubPass?.sessions ?? 10), price: clubPass ? String(clubPass.price) : '' };
+    const set = (k) => (e) => setPassDraft({ ...d, [k]: e.target.value });
+    return (
+      <div className={`${card} space-y-3`}>
+        <h3 className="font-semibold text-sm flex items-center gap-1.5"><FileText size={14} /> Session Pass</h3>
+        <p className="text-xs text-slate-500">For {lc(W.members)} who don't come every week. One pass for the whole club, whatever their {lc(W.group)}. Parents paying by card can buy one, and you can give one to any {lc(W.member)} from their record in {W.members} (with a different number of sessions or price if you like).</p>
+        <div className="flex gap-2 items-end">
+          <Field label="Number of sessions"><input type="number" min="1" max="500" aria-label="Sessions per pass" className={inputCls} value={d.sessions} onChange={set('sessions')} /></Field>
+          <Field label="Price ($)"><input type="number" step="0.01" min="0" aria-label="Price of a pass" placeholder="e.g. 120" className={inputCls} value={d.price} onChange={set('price')} /></Field>
+          {passDraft && (
+            <button onClick={savePassSettings} aria-label="Save pass" disabled={busy === 'passset'} className={`${primaryBtn} py-2 px-3 shrink-0`}><Check size={12} /> Save</button>
+          )}
+        </div>
+        {!clubPass && <p className="text-[11px] text-amber-700">No pass set yet: parents won't see one until you save a price.</p>}
+      </div>
+    );
+  };
 
   const DetailRow = ({ label, children }) => (
     <div className="grid grid-cols-[96px_1fr] gap-2 py-1">
@@ -2057,16 +2053,44 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     </div>
   );
 
+  // Any start date: charities, companies and incorporated societies can each have their own balance date
+  const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const renderFinancialYear = () => {
+    const [m, d] = financialYearStart.split('-').map(Number);
+    const setFy = (month, day) => {
+      const dd = Math.min(day, MONTH_DAYS[month - 1]);
+      setFinancialYearStart(`${String(month).padStart(2, '0')}-${String(dd).padStart(2, '0')}`);
+      setSettingsDirty(true);
+    };
+    const start = new Date(2025, m - 1, d);
+    const end = new Date(2026, m - 1, d - 1);
+    const presets = [['04-01', '1 April'], ['07-01', '1 July'], ['01-01', '1 January']];
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-slate-500">Financial year starts on</p>
+        <div className="grid grid-cols-[80px_1fr] gap-2">
+          <select aria-label="Financial year start day" value={d} onChange={(e) => setFy(m, Number(e.target.value))} className={inputCls}>
+            {Array.from({ length: MONTH_DAYS[m - 1] }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <select aria-label="Financial year start month" value={m} onChange={(e) => setFy(Number(e.target.value), d)} className={inputCls}>
+            {MONTH_NAMES.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {presets.map(([v, label]) => (
+            <button key={v} type="button" onClick={() => { setFinancialYearStart(v); setSettingsDirty(true); }} className={`text-[11px] px-2 py-1 rounded-full border ${financialYearStart === v ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600'}`}>{label}</button>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400">Your year runs {start.getDate()} {MONTH_NAMES[start.getMonth()]} to {end.getDate()} {MONTH_NAMES[end.getMonth()]}. It sets the year-to-date figures and the GST and financial reports. Use your balance date from your charity, society or company registration.</p>
+      </div>
+    );
+  };
+
   const renderFinanceSettings = () => (
     <div className={`${card} space-y-3 text-sm`}>
       <h3 className="font-semibold text-sm">Finance Settings & Templates</h3>
-      <Field label="Financial Year Start">
-        <select value={financialYearStart} onChange={(e) => { setFinancialYearStart(e.target.value); setSettingsDirty(true); }} className={inputCls}>
-          <option value="04-01">April 1st (NZ standard)</option>
-          <option value="07-01">July 1st (AU standard)</option>
-          <option value="01-01">January 1st (Calendar Year)</option>
-        </select>
-      </Field>
+      {renderFinancialYear()}
       <Field label="Overdue SMS Template">
         <textarea className={`${inputCls} text-xs`} rows="3" value={smsTemplate} onChange={(e) => { setSmsTemplate(e.target.value); setSettingsDirty(true); }} />
       </Field>
@@ -2285,14 +2309,14 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         </div>
         <Field label="Coach"><input className={inputCls} value={f.coach} onChange={set('coach')} placeholder="Coach in charge" /></Field>
         <p className="text-xs font-semibold text-slate-600 pt-1">Pricing (GST-inclusive)</p>
-        <div className="grid grid-cols-2 gap-2">
-          {[['weekly', 'Weekly'], ['fortnightly', 'Fortnightly'], ['monthly', 'Monthly'], ['pass', 'Session Pass']].map(([k, label]) => (
+        <div className="grid grid-cols-3 gap-2">
+          {[['weekly', 'Weekly'], ['fortnightly', 'Fortnightly'], ['monthly', 'Monthly']].map(([k, label]) => (
             <Field key={k} label={`${label} ($)`}>
               <input type="number" step="0.01" min="0" className={inputCls} value={f[k]} onChange={set(k)} />
             </Field>
           ))}
         </div>
-        <Field label="Sessions per pass"><input type="number" min="1" max="500" className={inputCls} value={f.passSessions ?? '10'} onChange={set('passSessions')} /></Field>
+        <p className="text-[11px] text-slate-400">Session passes are set once for the whole club in Settings.</p>
         <div className="flex gap-2 pt-1">
           <button onClick={saveSquadForm} disabled={busy === 'squad'} className={`flex-1 ${primaryBtn} py-2`}><Check size={12} /> {f.mode === 'create' ? `Create ${W.group}` : 'Save'}</button>
           <button onClick={() => setSquadForm(null)} className={`flex-1 ${ghostBtn}`}><X size={12} /> Cancel</button>
@@ -2459,7 +2483,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                 <p className="text-xs text-slate-400">
                   {s.location || 'No location'} · {squadAthletes(s.id).length} athletes{s.capacity ? ` · max ${s.capacity}/session` : ''}{s.coach ? ` · ${s.coach}` : ''}
                 </p>
-                <p className="text-xs text-slate-400">{money(s.weekly)}/wk · {money(s.fortnightly)}/fn · {money(s.monthly)}/mth · {passSessionsOf(s)}-session pass {money(s.pass)}</p>
+                <p className="text-xs text-slate-400">{money(s.weekly)}/wk · {money(s.fortnightly)}/fn · {money(s.monthly)}/mth</p>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {series.length === 0 && <span className="text-[10px] text-amber-700">No training times yet</span>}
                   {series.map((x) => <span key={x.seriesId} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{DAY_SHORT[x.day]} {fmtTime(x.start)}</span>)}
