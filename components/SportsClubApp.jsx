@@ -283,11 +283,13 @@ const DEMO_ATHLETES = [
 ];
 
 // Demo mode only: sample ledger (amounts are GST-inclusive; gst = whether GST applies)
-// Demo mode only: Ruby has a pass the club gave her (paid in cash)
+// Demo mode only: Ruby has a pass the club gave her (paid in cash); the coach has offered Leo one
 const DEMO_PASSES = [
-  { id: 1, athleteId: 3, sessions: 10, used: 3, left: 7, price: 150, paidBy: 'cash', status: 'active', issuedOn: '2026-10-01' },
+  { id: 1, athleteId: 3, familyId: null, sessions: 10, used: 3, left: 7, price: 150, paidBy: 'cash', status: 'active', issuedOn: '2026-10-01' },
+  { id: 2, athleteId: 1, familyId: null, sessions: 5, used: 0, left: 5, price: 60, paidBy: 'unpaid', status: 'offered', issuedOn: '2026-10-20' },
 ];
 const PAID_BY_LABEL = { card: 'Card', bank: 'Bank transfer', cash: 'Cash', free: 'Free', unpaid: 'Not paid yet' };
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const DEMO_TRANSACTIONS = [
   { id: 1, date: '2026-10-01', type: 'Income', category: 'Stripe Subscription', description: 'Leo Parker - Weekly Fee', amount: 25.50, gst: true },
@@ -392,10 +394,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const [familiesState, setFamilies] = useState([]);
   const [passes, setPasses] = useState(remote ? [] : DEMO_PASSES);
   const flashTimer = useRef(null);
-  const [passForm, setPassForm] = useState(null);     // giving a child a pass: { athleteId, sessions, price, paidBy }
+  const [passForm, setPassForm] = useState(null);     // a new pass: { athleteId, sessions, price, paidBy ('offer' = parents buy it), forFamily }
   const [passEdit, setPassEdit] = useState(null);     // changing sessions left: { id, left }
-  const [clubPass, setClubPass] = useState(remote ? null : { sessions: 10, price: 130 }); // the club's pass: { sessions, price }
-  const [passDraft, setPassDraft] = useState(null);   // the pass settings being edited  // server mode: families (children billed together)
   const [profileDrafts, setProfileDrafts] = useState({}); // parent: unsaved profile edits, per child
   const [confirmDeleteAthlete, setConfirmDeleteAthlete] = useState(null);
 
@@ -427,11 +427,18 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   };
   const families = remote ? familiesState : demoFamilies();
   const membersOf = (f) => athletes.filter((a) => f.athleteIds.includes(a.id));
-  const passesFor = (athleteId) => passes.filter((p) => p.athleteId === athleteId && p.status === 'active');
+  // Passes are for one child, or for a whole family (shared by the children)
+  const familyIdOf = (athleteId) => families.find((f) => f.athleteIds.includes(athleteId))?.id ?? null;
+  const passBelongs = (p, athleteId) => p.athleteId === athleteId || (p.familyId != null && p.familyId === familyIdOf(athleteId));
+  const passesFor = (athleteId) => passes.filter((p) => p.status === 'active' && passBelongs(p, athleteId));
+  const offersFor = (athleteId) => passes.filter((p) => p.status === 'offered' && passBelongs(p, athleteId));
   const passLeft = (athleteId) => passesFor(athleteId).reduce((sum, p) => sum + p.left, 0);
   const hasPass = (athleteId) => passesFor(athleteId).length > 0;
   // The server sends a child's current passes after a change
-  const mergePasses = (list, athleteIds) => setPasses((prev) => [...prev.filter((p) => !athleteIds.includes(p.athleteId)), ...list]);
+  const mergePasses = (list) => {
+    const ids = new Set(list.map((p) => p.id));
+    setPasses((prev) => [...prev.filter((p) => !ids.has(p.id)), ...list]);
+  };
   const parentFamilies = families.filter((f) => f.athleteIds.some((id) => parentAthletes.some((a) => a.id === id)));
 
   const rsvpKey = (athleteId, seriesId, date) => `${athleteId}|${seriesId}|${date}`;
@@ -486,7 +493,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       setRegularCounts(d.regularCounts);
       setPaymentsConnected(Boolean(d.payments?.connected));
       if (d.settings.financialYearStart) setFinancialYearStart(d.settings.financialYearStart);
-      setClubPass(d.settings.pass || null);
       if (d.settings.smsTemplate !== undefined) setSmsTemplate(d.settings.smsTemplate);
       if (d.settings.emailTemplate !== undefined) setEmailTemplate(d.settings.emailTemplate);
       if (d.me) updateUser?.(d.me);
@@ -623,7 +629,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // Demo mode: a present mark uses a pass session, unticking gives it back
   const demoUsePass = (athleteId, present) => setPasses((prev) => {
-    const mine = prev.filter((p) => p.athleteId === athleteId && p.status === 'active');
+    // The child's own passes first, then the family's
+    const mine = prev.filter((p) => p.status === 'active' && passBelongs(p, athleteId)).sort((x, y) => (x.athleteId == null) - (y.athleteId == null));
     const p = present ? mine.find((x) => x.left > 0) : [...mine].reverse().find((x) => x.used > 0);
     if (!p) return prev;
     const used = p.used + (present ? 1 : -1);
@@ -637,7 +644,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     if (remote) {
       const res = await attempt(() => api('/api/attendance', { method: 'PUT', body: { athleteId, seriesId: s.seriesId, date: s.date, present } }));
       if (!res) setAttendance((prev) => ({ ...prev, [key]: !present }));
-      else if (res.passes) mergePasses(res.passes, [athleteId]);
+      else if (res.passes) mergePasses(res.passes);
     } else {
       demoUsePass(athleteId, present);
     }
@@ -647,7 +654,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     if (remote) {
       const res = await attempt(() => api('/api/attendance/bulk', { method: 'POST', body: { seriesId: s.seriesId, date: s.date, athleteIds: list.map((a) => a.id) } }));
       if (!res) return;
-      if (res.passes) mergePasses(res.passes, res.athleteIds || []);
+      if (res.passes) mergePasses(res.passes);
     } else {
       for (const a of list) if (!attendance[rsvpKey(a.id, s.seriesId, s.date)]) demoUsePass(a.id, true);
     }
@@ -725,21 +732,19 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     redirectTo('portal', '/api/portal', { familyId: f.id });
   };
 
-  // A session pass is for one child
-  const buyPass = (a) => {
-    if (!clubPass) return;
+  // Parents buy a pass the club has offered them
+  const buyPass = (p) => {
     if (!remote) {
-      const { sessions, price } = clubPass;
-      setTransactions((prev) => [...prev, {
-        id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass',
-        description: `${a.name} - ${sessions}-Session Pass (Card)`, amount: price, gst: true,
-      }]);
-      setPasses((prev) => [...prev, { id: Date.now(), athleteId: a.id, sessions, used: 0, left: sessions, price, paidBy: 'card', status: 'active', issuedOn: todayISO }]);
-      showFlash(`${sessions}-session pass purchased (${money(price)}) — demo only`);
+      setPasses((prev) => prev.map((x) => (x.id === p.id ? { ...x, status: 'active', paidBy: 'card' } : x)));
+      setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass', description: `${passOwnerLabel(p)} - ${p.sessions}-Session Pass (Card)`, amount: p.price, gst: true }]);
+      showFlash(`${plural(p.sessions, 'session')} pass bought (${money(p.price)}) — demo only`);
       return;
     }
-    redirectTo(`pass-${a.id}`, '/api/checkout/pass', { athleteId: a.id });
+    redirectTo(`pass-${p.id}`, '/api/checkout/pass', { passId: p.id });
   };
+  const passOwnerLabel = (p) => (p.athleteId != null
+    ? athletes.find((a) => a.id === p.athleteId)?.name || ''
+    : families.find((f) => f.id === p.familyId)?.name || 'Family');
 
   const saveProfile = async (a) => {
     const draft = profileDrafts[a.id] || profileFromAthlete(a);
@@ -1093,6 +1098,9 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                 <p className="text-xs text-slate-400">{f.name} · {FREQ_TITLE[f.frequency]}</p>
                 <p className="font-semibold text-sm">{money(f.total)}{f.nextBillingDate ? ` due ${fmtShort(f.nextBillingDate)}` : `/${FREQ_LABEL[f.frequency]}`}</p>
                 <p className="text-xs text-slate-500 truncate">{howPaid(f)}</p>
+                {passes.some((p) => p.status === 'offered' && (p.familyId === f.id || f.athleteIds.includes(p.athleteId))) && (
+                  <button onClick={() => setActiveTab('payments')} className="text-xs text-indigo-700 font-semibold">The club has offered you a session pass →</button>
+                )}
               </div>
               <span className={`text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 ${f.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                 {f.status === 'paid' ? 'Paid up' : 'Payment overdue'}
@@ -1322,30 +1330,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         ))}
         {f.cardStopping && <p className="text-[11px] text-amber-700 text-center">Your card payments stop at the end of the period already paid{f.nextBillingDate ? ` (${fmtShort(f.nextBillingDate)})` : ''}. After that, please pay by bank transfer.</p>}
 
-        <div className={`${card} space-y-2`}>
-          <h3 className="font-semibold text-sm">Session passes</h3>
-          {kids.map((k) => {
-            const mine = passesFor(k.id);
-            const first = k.name.split(' ')[0];
-            return (
-              <div key={k.id} className="space-y-1.5 py-1.5 border-b border-slate-50">
-                <p className="text-xs flex justify-between gap-2">
-                  <span className="font-medium text-slate-700">{first}</span>
-                  <span className={mine.length ? (passLeft(k.id) > 0 ? 'text-indigo-700 font-semibold' : 'text-rose-700 font-semibold') : 'text-slate-400'}>
-                    {mine.length ? `${passLeft(k.id)} session${passLeft(k.id) === 1 ? '' : 's'} left` : 'No pass'}
-                  </span>
-                </p>
-                {clubPass && showCard && (
-                  <button onClick={() => buyPass(k)} disabled={busy === `pass-${k.id}`} className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs disabled:opacity-50">
-                    {busy === `pass-${k.id}` ? 'Opening secure checkout…' : `Buy ${first} a pass: ${clubPass.sessions} sessions by card (${money(clubPass.price)})`}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {clubPass && !showCard && <p className="text-xs text-slate-600 flex justify-between gap-2"><span>A pass: {clubPass.sessions} sessions</span><span className="font-medium">{money(clubPass.price)}</span></p>}
-          {clubPass && !showCard && showBank && <p className="text-[11px] text-slate-500">To buy one, pay the same account with reference <span className="font-mono">{f.reference}</span> and let the club know which child it's for. The club adds the pass for you.</p>}
-        </div>
+        {renderParentPasses(f, kids, showCard, showBank)}
 
         <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
           <Shield size={11} />
@@ -1353,6 +1338,40 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
             : f.payMethod === 'card' ? 'Your club has set your family to pay by card. Card details are handled securely by Stripe and never touch this app.'
             : 'Your club has set your family to pay by bank transfer.'}
         </p>
+      </div>
+    );
+  };
+
+  // Passes the club has offered (to buy) and passes in use, for each child and the whole family
+  const renderParentPasses = (f, kids, showCard, showBank) => {
+    const familyPasses = passes.filter((p) => p.familyId === f.id && p.status !== 'cancelled');
+    const childPasses = kids.map((k) => ({ k, list: passes.filter((p) => p.athleteId === k.id && p.status !== 'cancelled') }));
+    if (!familyPasses.length && !childPasses.some((c) => c.list.length)) return null;
+    const row = (p, who) => (p.status === 'offered' ? (
+      <div key={p.id} className="p-3 rounded-lg bg-indigo-50 space-y-2">
+        <p className="text-xs text-indigo-900"><span className="font-semibold">The club is offering {who} a pass:</span> {plural(p.sessions, 'session')} for {money(p.price)}.</p>
+        {showCard ? (
+          <button onClick={() => buyPass(p)} disabled={busy === `pass-${p.id}`} className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs disabled:opacity-50">
+            {busy === `pass-${p.id}` ? 'Opening secure checkout…' : `Buy it by card (${money(p.price)})`}
+          </button>
+        ) : showBank ? (
+          <p className="text-[11px] text-indigo-800">To buy it, pay {money(p.price)} to the club's account above with reference <span className="font-mono font-medium">{f.reference}</span>. The pass starts once the club sees your payment.</p>
+        ) : (
+          <p className="text-[11px] text-indigo-800">Talk to the club about paying for it.</p>
+        )}
+      </div>
+    ) : (
+      <p key={p.id} className="text-xs flex justify-between gap-2 py-1">
+        <span className="text-slate-600">{who}: {p.sessions}-session pass{p.paidBy === 'unpaid' ? ' (not paid yet)' : ''}</span>
+        <span className={`font-semibold shrink-0 ${p.left > 0 ? 'text-indigo-700' : 'text-rose-700'}`}>{p.left > 0 ? `${plural(p.left, 'session')} left` : 'Used up'}</span>
+      </p>
+    ));
+    return (
+      <div className={`${card} space-y-2`}>
+        <h3 className="font-semibold text-sm">Session passes</h3>
+        {familyPasses.map((p) => row(p, 'your family (shared by all your children)'))}
+        {childPasses.map(({ k, list }) => list.map((p) => row(p, k.name.split(' ')[0])))}
+        <p className="text-[11px] text-slate-400">Each session your child is marked present uses one.</p>
       </div>
     );
   };
@@ -1729,7 +1748,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   const startPassForm = (a) => {
     setPassEdit(null);
-    setPassForm({ athleteId: a.id, sessions: String(clubPass?.sessions ?? 10), price: String(clubPass?.price ?? ''), paidBy: bankDetailsOn ? 'bank' : 'cash' });
+    setPassForm({ athleteId: a.id, sessions: '10', price: '', paidBy: 'offer', forFamily: false });
   };
 
   const issuePass = async (a) => {
@@ -1737,23 +1756,30 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     const price = passForm.paidBy === 'free' ? 0 : parseFloat(passForm.price);
     if (!Number.isInteger(sessions) || sessions < 1 || sessions > 500) { showFlash('Enter the number of sessions (1 to 500)'); return; }
     if (!Number.isFinite(price) || price < 0) { showFlash('Enter a price'); return; }
-    const paidBy = passForm.paidBy;
+    const { paidBy, forFamily } = passForm;
+    if (paidBy === 'offer' && !(price > 0)) { showFlash('Enter the price the parents will pay'); return; }
+    const who = forFamily ? `The ${families.find((f) => f.athleteIds.includes(a.id))?.name || 'family'}` : a.name.split(' ')[0];
+    const done = paidBy === 'offer' ? `Pass offered: ${who} can buy ${plural(sessions, 'session')} for ${money(price)}` : `${who} now has a ${sessions}-session pass`;
     if (!remote) {
-      setPasses((prev) => [...prev, { id: Date.now(), athleteId: a.id, sessions, used: 0, left: sessions, price, paidBy, status: 'active', issuedOn: todayISO }]);
+      const familyId = forFamily ? familyIdOf(a.id) : null;
+      setPasses((prev) => [...prev, {
+        id: Date.now(), athleteId: familyId ? null : a.id, familyId, sessions, used: 0, left: sessions, price,
+        paidBy: paidBy === 'offer' ? 'unpaid' : paidBy, status: paidBy === 'offer' ? 'offered' : 'active', issuedOn: todayISO,
+      }]);
       if ((paidBy === 'bank' || paidBy === 'cash') && price > 0) {
-        setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass', description: `${a.name} - ${sessions}-Session Pass (${PAID_BY_LABEL[paidBy]})`, amount: price, gst: true }]);
+        setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass', description: `${forFamily ? who.replace(/^The /, '') : a.name} - ${sessions}-Session Pass (${PAID_BY_LABEL[paidBy]})`, amount: price, gst: true }]);
       }
       setPassForm(null);
-      showFlash(`${a.name.split(' ')[0]} has a ${sessions}-session pass`);
+      showFlash(done);
       return;
     }
     setBusy('pass-issue');
     try {
-      const res = await api(`/api/athletes/${a.id}/passes`, { method: 'POST', body: { sessions, price, paidBy } });
+      const res = await api(`/api/athletes/${a.id}/passes`, { method: 'POST', body: { sessions, price, paidBy, forFamily: Boolean(forFamily) } });
       setPasses((prev) => [...prev, res.pass]);
       if (res.transaction) setTransactions((prev) => [...prev, res.transaction]);
       setPassForm(null);
-      showFlash(`${a.name.split(' ')[0]} has a ${sessions}-session pass`);
+      showFlash(done);
     } catch (e) {
       if (!e.signedOut) showFlash(e.message);
     } finally {
@@ -1768,11 +1794,10 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         if (x.id !== p.id) return x;
         if (body.status) return { ...x, status: body.status };
         if (body.left != null) return { ...x, sessions: x.used + body.left, left: body.left };
-        return { ...x, paidBy: body.paidBy };
+        return { ...x, paidBy: body.paidBy, status: 'active' };
       }));
       if (body.paidBy && p.price > 0) {
-        const a = athletes.find((x) => x.id === p.athleteId);
-        setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass', description: `${a?.name || ''} - ${p.sessions}-Session Pass (${PAID_BY_LABEL[body.paidBy]})`, amount: p.price, gst: true }]);
+        setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass', description: `${passOwnerLabel(p)} - ${p.sessions}-Session Pass (${PAID_BY_LABEL[body.paidBy]})`, amount: p.price, gst: true }]);
       }
       showFlash(done);
       return;
@@ -1790,24 +1815,30 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     }
   };
 
-  const bankDetailsOn = remote ? Boolean(club.payments?.bank) : true;
 
   const renderAthletePasses = (a) => {
-    const list = passesFor(a.id);
+    const list = passes.filter((p) => p.status !== 'cancelled' && passBelongs(p, a.id));
     const first = a.name.split(' ')[0];
     const f = passForm?.athleteId === a.id ? passForm : null;
+    const fam = families.find((x) => x.athleteIds.includes(a.id));
+    const siblings = fam ? membersOf(fam).filter((k) => k.id !== a.id) : [];
     return (
       <div>
         <p className="text-xs font-semibold text-slate-700 pb-1">Session passes</p>
-        {list.length === 0 && !f && <p className="text-xs text-slate-400 pb-1">No pass.</p>}
+        {list.length === 0 && !f && <p className="text-xs text-slate-400 pb-1">No pass. Offer one if {first} doesn't come every week.</p>}
         {list.map((p) => (
           <div key={p.id} className="py-1.5 border-b border-slate-50 text-xs space-y-1">
             <div className="flex justify-between gap-2">
               <span className="min-w-0">
-                <span className={`font-semibold ${p.left > 0 ? 'text-slate-800' : 'text-rose-700'}`}>{p.left} of {p.sessions} sessions left</span>
-                <span className="block text-slate-400">{p.paidBy === 'free' ? 'Free' : `${money(p.price)} · ${PAID_BY_LABEL[p.paidBy]}`} · given {fmtShort(p.issuedOn)}</span>
+                {p.familyId != null && <span className="block text-[10px] uppercase tracking-wide text-violet-700 font-semibold">{fam?.name || 'Family'} pass · shared</span>}
+                {p.status === 'offered'
+                  ? <span className="font-semibold text-slate-800">Offered: {plural(p.sessions, 'session')} for {money(p.price)}</span>
+                  : <span className={`font-semibold ${p.left > 0 ? 'text-slate-800' : 'text-rose-700'}`}>{p.left} of {p.sessions} sessions left</span>}
+                <span className="block text-slate-400">{p.status === 'offered' ? `Waiting for the parents to buy it · offered ${fmtShort(p.issuedOn)}` : `${p.paidBy === 'free' ? 'Free' : `${money(p.price)} · ${PAID_BY_LABEL[p.paidBy]}`} · given ${fmtShort(p.issuedOn)}`}</span>
               </span>
-              {p.paidBy === 'unpaid' && <span className="text-[10px] px-1.5 py-0.5 h-fit rounded bg-amber-50 text-amber-700 font-semibold shrink-0">NOT PAID</span>}
+              {p.status === 'offered'
+                ? <span className="text-[10px] px-1.5 py-0.5 h-fit rounded bg-indigo-50 text-indigo-700 font-semibold shrink-0">OFFERED</span>
+                : p.paidBy === 'unpaid' && <span className="text-[10px] px-1.5 py-0.5 h-fit rounded bg-amber-50 text-amber-700 font-semibold shrink-0">NOT PAID</span>}
             </div>
             {passEdit?.id === p.id ? (
               <form onSubmit={(e) => { e.preventDefault(); const left = parseInt(passEdit.left, 10); if (!Number.isInteger(left) || left < 0) { showFlash('Enter the sessions left'); return; } changePass(p, { left }, 'Pass updated'); setPassEdit(null); }} className="flex gap-2 items-center">
@@ -1824,78 +1855,49 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                     <button onClick={() => changePass(p, { paidBy: 'cash' }, 'Pass marked paid')} disabled={busy === `pass-${p.id}`} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded font-medium">Paid in cash</button>
                   </>
                 )}
-                <button onClick={() => setPassEdit({ id: p.id, left: String(p.left) })} className="px-2 py-1 bg-slate-100 text-slate-700 rounded font-medium">Change sessions left</button>
-                <button onClick={() => changePass(p, { status: 'cancelled' }, 'Pass cancelled')} disabled={busy === `pass-${p.id}`} className="px-2 py-1 bg-rose-50 text-rose-700 rounded font-medium">Cancel pass</button>
+                {p.status === 'active' && <button onClick={() => setPassEdit({ id: p.id, left: String(p.left) })} className="px-2 py-1 bg-slate-100 text-slate-700 rounded font-medium">Change sessions left</button>}
+                <button onClick={() => changePass(p, { status: 'cancelled' }, p.status === 'offered' ? 'Offer withdrawn' : 'Pass cancelled')} disabled={busy === `pass-${p.id}`} className="px-2 py-1 bg-rose-50 text-rose-700 rounded font-medium">{p.status === 'offered' ? 'Withdraw offer' : 'Cancel pass'}</button>
               </div>
             )}
           </div>
         ))}
         {f ? (
           <form onSubmit={(e) => { e.preventDefault(); issuePass(a); }} className="mt-2 p-3 bg-indigo-50 rounded-lg space-y-2">
-            <p className="text-xs font-semibold text-indigo-900">Give {first} a pass</p>
+            <p className="text-xs font-semibold text-indigo-900">New pass</p>
+            {siblings.length > 0 && (
+              <Field label="Who it's for">
+                <select aria-label="Who the pass is for" className={inputCls} value={f.forFamily ? 'family' : 'child'} onChange={(e) => setPassForm({ ...f, forFamily: e.target.value === 'family' })}>
+                  <option value="child">{first} only</option>
+                  <option value="family">The {fam.name} (shared with {siblings.map((k) => k.name.split(' ')[0]).join(', ')})</option>
+                </select>
+              </Field>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <Field label="Number of sessions"><input type="number" min="1" max="500" aria-label="Number of sessions" className={inputCls} value={f.sessions} onChange={(e) => setPassForm({ ...f, sessions: e.target.value })} /></Field>
-              <Field label="Price ($)"><input type="number" step="0.01" min="0" aria-label="Pass price" className={inputCls} disabled={f.paidBy === 'free'} value={f.paidBy === 'free' ? '0' : f.price} onChange={(e) => setPassForm({ ...f, price: e.target.value })} /></Field>
+              <Field label="Price ($)"><input type="number" step="0.01" min="0" aria-label="Pass price" placeholder="e.g. 60" className={inputCls} disabled={f.paidBy === 'free'} value={f.paidBy === 'free' ? '0' : f.price} onChange={(e) => setPassForm({ ...f, price: e.target.value })} /></Field>
             </div>
-            <Field label="Paid by">
-              <select aria-label="Paid by" className={inputCls} value={f.paidBy} onChange={(e) => setPassForm({ ...f, paidBy: e.target.value })}>
-                <option value="bank">Bank transfer (received)</option>
-                <option value="cash">Cash (received)</option>
-                <option value="unpaid">Not paid yet</option>
+            <Field label="How it's paid">
+              <select aria-label="How it's paid" className={inputCls} value={f.paidBy} onChange={(e) => setPassForm({ ...f, paidBy: e.target.value })}>
+                <option value="offer">Offer it to the parents to buy</option>
+                <option value="bank">Already paid by bank transfer</option>
+                <option value="cash">Already paid in cash</option>
+                <option value="unpaid">Start now, paid later</option>
                 <option value="free">Free</option>
               </select>
             </Field>
-            <p className="text-[11px] text-indigo-800">Each session you mark {first} present uses one. Money received goes in the books.</p>
+            <p className="text-[11px] text-indigo-800">
+              {f.paidBy === 'offer'
+                ? `The parents see the offer on their Payments page and can buy it (by card, or by bank transfer for you to mark paid). It starts once paid.`
+                : `Starts now. Each session ${f.forFamily ? 'one of the children is' : `${first} is`} marked present uses one. Money received goes in the books.`}
+            </p>
             <div className="flex gap-2">
-              <button type="submit" disabled={busy === 'pass-issue'} className={`flex-1 ${primaryBtn} py-2`}><Check size={12} /> {busy === 'pass-issue' ? 'Saving…' : 'Give pass'}</button>
+              <button type="submit" disabled={busy === 'pass-issue'} className={`flex-1 ${primaryBtn} py-2`}><Check size={12} /> {busy === 'pass-issue' ? 'Saving…' : f.paidBy === 'offer' ? 'Offer pass' : 'Give pass'}</button>
               <button type="button" onClick={() => setPassForm(null)} className={`flex-1 ${ghostBtn}`}><X size={12} /> Cancel</button>
             </div>
           </form>
         ) : (
-          <button onClick={() => startPassForm(a)} className={`w-full mt-1 ${ghostBtn} bg-indigo-50 text-indigo-700`}><Plus size={12} /> Give a pass</button>
+          <button onClick={() => startPassForm(a)} className={`w-full mt-1 ${ghostBtn} bg-indigo-50 text-indigo-700`}><Plus size={12} /> Offer or give a pass</button>
         )}
-      </div>
-    );
-  };
-
-  // The club's pass: how many sessions and the price (the same for every group)
-  const savePassSettings = async () => {
-    const sessions = parseInt(passDraft.sessions, 10);
-    const price = parseFloat(passDraft.price);
-    if (!Number.isInteger(sessions) || sessions < 1 || sessions > 500) { showFlash('Sessions per pass must be 1 to 500'); return; }
-    if (!Number.isFinite(price) || price <= 0) { showFlash('Enter the price of a pass'); return; }
-    let next = { sessions, price };
-    if (remote) {
-      setBusy('passset');
-      try {
-        next = (await api('/api/club/pass', { method: 'PUT', body: { sessions, price } })).pass;
-      } catch (e) {
-        if (!e.signedOut) showFlash(e.message);
-        return;
-      } finally {
-        setBusy('');
-      }
-    }
-    setClubPass(next);
-    setPassDraft(null);
-    showFlash(`Pass saved: ${sessions} sessions for ${money(price)}`);
-  };
-
-  const renderPassSettings = () => {
-    const d = passDraft || { sessions: String(clubPass?.sessions ?? 10), price: clubPass ? String(clubPass.price) : '' };
-    const set = (k) => (e) => setPassDraft({ ...d, [k]: e.target.value });
-    return (
-      <div className={`${card} space-y-3`}>
-        <h3 className="font-semibold text-sm flex items-center gap-1.5"><FileText size={14} /> Session Pass</h3>
-        <p className="text-xs text-slate-500">For {lc(W.members)} who don't come every week. One pass for the whole club, whatever their {lc(W.group)}. Parents paying by card can buy one, and you can give one to any {lc(W.member)} from their record in {W.members} (with a different number of sessions or price if you like).</p>
-        <div className="flex gap-2 items-end">
-          <Field label="Number of sessions"><input type="number" min="1" max="500" aria-label="Sessions per pass" className={inputCls} value={d.sessions} onChange={set('sessions')} /></Field>
-          <Field label="Price ($)"><input type="number" step="0.01" min="0" aria-label="Price of a pass" placeholder="e.g. 120" className={inputCls} value={d.price} onChange={set('price')} /></Field>
-          {passDraft && (
-            <button onClick={savePassSettings} aria-label="Save pass" disabled={busy === 'passset'} className={`${primaryBtn} py-2 px-3 shrink-0`}><Check size={12} /> Save</button>
-          )}
-        </div>
-        {!clubPass && <p className="text-[11px] text-amber-700">No pass set yet: parents won't see one until you save a price.</p>}
       </div>
     );
   };
@@ -2316,7 +2318,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
             </Field>
           ))}
         </div>
-        <p className="text-[11px] text-slate-400">Session passes are set once for the whole club in Settings.</p>
+        <p className="text-[11px] text-slate-400">Session passes are offered to a child or family from their record in {W.members}.</p>
         <div className="flex gap-2 pt-1">
           <button onClick={saveSquadForm} disabled={busy === 'squad'} className={`flex-1 ${primaryBtn} py-2`}><Check size={12} /> {f.mode === 'create' ? `Create ${W.group}` : 'Save'}</button>
           <button onClick={() => setSquadForm(null)} className={`flex-1 ${ghostBtn}`}><X size={12} /> Cancel</button>
@@ -2511,7 +2513,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       )}
       {remote && <ClubSettings club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} onRefresh={loadFromServer} />}
       {renderPaymentMethods()}
-      {renderPassSettings()}
       {renderTeamAccess()}
       {renderFinanceSettings()}
       {renderAccount()}
@@ -2544,7 +2545,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       home: () => <div className="space-y-4">{renderFinanceStats()}{renderReconciliation()}</div>,
       athletes: renderAthletes,
       financials: renderReports,
-      settings: () => <div className="space-y-4"><h2 className="font-bold text-base">Settings</h2>{renderPaymentMethods()}{renderPassSettings()}{renderTeamAccess()}{renderFinanceSettings()}{renderAccount()}</div>,
+      settings: () => <div className="space-y-4"><h2 className="font-bold text-base">Settings</h2>{renderPaymentMethods()}{renderTeamAccess()}{renderFinanceSettings()}{renderAccount()}</div>,
     },
     coach: {
       home: renderCoachHome, attendance: renderAttendance, athletes: renderAthletes,

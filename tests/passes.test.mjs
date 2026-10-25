@@ -12,6 +12,7 @@ let parent;
 let dev;
 let kid;
 let other;
+let sib;
 let clubId;
 before(async () => {
   stripe = fakeStripe();
@@ -24,7 +25,8 @@ before(async () => {
   dev = (await coach.post('/api/squads', body)).json;
   kid = (await coach.post('/api/athletes', { name: 'Kai Ngata', squadId: dev.id })).json.athlete;
   other = (await coach.post('/api/athletes', { name: 'Other Kid', squadId: dev.id })).json.athlete;
-  parent = await setUp((await app.auth.inviteUser({ clubId, email: 'p@pass.test', role: 'parent', athleteIds: [kid.id] })).url, 'p@pass.test');
+  sib = (await coach.post('/api/athletes', { name: 'Mere Ngata', squadId: dev.id })).json.athlete;
+  parent = await setUp((await app.auth.inviteUser({ clubId, email: 'p@pass.test', role: 'parent', athleteIds: [kid.id, sib.id] })).url, 'p@pass.test');
 });
 after(async () => { await app.close(); });
 
@@ -41,38 +43,62 @@ async function setUp(url, email) {
 const boot = async (who) => (await who.get('/api/bootstrap')).json;
 const series = () => dev.sessions[0].seriesId;
 
-test('one pass for the whole club: the coach and treasurer set the sessions and price', async () => {
-  assert.equal((await parent.post('/api/checkout/pass', { athleteId: kid.id })).status, 409, 'no pass set up yet');
-  assert.equal((await parent.put('/api/club/pass', { sessions: 5, price: 50 })).status, 403, 'not parents');
-  assert.equal((await treasurer.put('/api/club/pass', { sessions: 0, price: 50 })).status, 400);
-  assert.equal((await treasurer.put('/api/club/pass', { sessions: 8, price: 0 })).status, 400);
-  const r = await treasurer.put('/api/club/pass', { sessions: 8, price: 96 });
+test('the coach or treasurer offers a pass to one child with their own sessions and price; parents can\'t make one', async () => {
+  assert.equal((await parent.post(`/api/athletes/${kid.id}/passes`, { sessions: 5, price: 50, paidBy: 'offer' })).status, 403);
+  assert.equal((await coach.post(`/api/athletes/${kid.id}/passes`, { sessions: 12, price: 0, paidBy: 'offer' })).status, 400, 'an offer needs a price');
+  const r = await coach.post(`/api/athletes/${kid.id}/passes`, { sessions: 12, price: 120, paidBy: 'offer' });
   assert.equal(r.status, 200, r.text);
-  assert.deepEqual(r.json.pass, { sessions: 8, price: 96 });
-  assert.deepEqual((await coach.put('/api/club/pass', { sessions: 12, price: 120 })).json.pass, { sessions: 12, price: 120 });
-  assert.deepEqual((await boot(parent)).settings.pass, { sessions: 12, price: 120 }, 'parents see the pass');
-  // Groups only have weekly, fortnightly and monthly prices now
-  const { id, pass, passSessions, ...rest } = dev;
+  assert.deepEqual([r.json.pass.status, r.json.pass.athleteId, r.json.pass.familyId, r.json.transaction], ['offered', kid.id, null, null]);
+  const seen = (await boot(parent)).passes;
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].status, 'offered', 'the parent sees the offer');
+  // Not usable until bought
+  const att = await coach.put('/api/attendance', { athleteId: kid.id, seriesId: series(), date: '2026-02-02', present: true });
+  assert.equal(att.json.passes.length, 0);
+  // Groups only have weekly, fortnightly and monthly prices
+  const { id, ...rest } = dev;
   assert.equal((await coach.put(`/api/squads/${dev.id}`, { ...rest, name: 'Development' })).status, 200);
 });
 
-test('parents buy the club\'s pass by card, whatever the group; Stripe confirming it gives the child the pass', async () => {
-  const r = await parent.post('/api/checkout/pass', { athleteId: kid.id });
+test('parents buy the offered pass by card; Stripe confirming it starts the pass', async () => {
+  const offer = (await boot(parent)).passes[0];
+  assert.equal((await parent.post('/api/checkout/pass', { passId: 999999 })).status, 404);
+  const r = await parent.post('/api/checkout/pass', { passId: offer.id });
   assert.equal(r.status, 200, r.text);
   const call = stripe.calls.findLast((x) => x.name === 'checkout.sessions.create');
   assert.equal(call.args[0].line_items[0].price_data.unit_amount, 12000);
-  assert.match(call.args[0].line_items[0].price_data.product_data.name, /12-Session Pass/);
+  assert.match(call.args[0].line_items[0].price_data.product_data.name, /12-Session Pass \(Kai Ngata\)/);
   const fam = (await boot(parent)).families[0];
-  stripe.checkout.sessions.retrieve = async () => ({ id: 'cs_pass', mode: 'payment', payment_status: 'paid', amount_total: 12000, customer: 'cus_k', metadata: { familyId: String(fam.id), athleteId: String(kid.id), sessions: '12', kind: 'pass' } });
+  stripe.checkout.sessions.retrieve = async () => ({ id: 'cs_pass', mode: 'payment', payment_status: 'paid', amount_total: 12000, customer: 'cus_k', metadata: { familyId: String(fam.id), passId: String(offer.id), kind: 'pass' } });
   process.env.STRIPE_CONNECT_WEBHOOK_SECRET = 'whsec_connect';
   try {
-    for (let i = 0; i < 2; i++) { // Stripe may send it twice: still one pass
+    for (let i = 0; i < 2; i++) { // Stripe may send it twice: still one pass, one income line
       await app.handleWebhook(new Request('http://x/api/webhook', { method: 'POST', body: JSON.stringify({ account: 'acct_pass', type: 'checkout.session.completed', data: { object: { id: 'cs_pass' } } }), headers: { 'stripe-signature': 'signed-with:whsec_connect' } }));
     }
   } finally { delete process.env.STRIPE_CONNECT_WEBHOOK_SECRET; }
   const passes = (await boot(parent)).passes;
   assert.equal(passes.length, 1);
-  assert.deepEqual([passes[0].sessions, passes[0].left, passes[0].paidBy, passes[0].price], [12, 12, 'card', 120]);
+  assert.deepEqual([passes[0].status, passes[0].sessions, passes[0].left, passes[0].paidBy, passes[0].price], ['active', 12, 12, 'card', 120]);
+  assert.equal((await boot(coach)).transactions.filter((x) => /Kai Ngata - 12-Session Pass \(Card\)/.test(x.description)).length, 1);
+  assert.equal((await parent.post('/api/checkout/pass', { passId: offer.id })).status, 409, 'already bought');
+});
+
+test('a family pass: the sessions are shared by the children, after their own passes', async () => {
+  const r = await treasurer.post(`/api/athletes/${sib.id}/passes`, { sessions: 6, price: 60, paidBy: 'offer', forFamily: true });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.pass.athleteId, null);
+  assert.ok(r.json.pass.familyId);
+  // Paid by bank: the treasurer marks it paid, it starts and goes in the books
+  const paid = await treasurer.put(`/api/passes/${r.json.pass.id}`, { paidBy: 'bank' });
+  assert.equal(paid.json.pass.status, 'active');
+  assert.match(paid.json.transaction.description, /^Ngata family - 6-Session Pass \(Bank transfer\)$/);
+  const a1 = await coach.put('/api/attendance', { athleteId: sib.id, seriesId: series(), date: '2026-02-09', present: true });
+  assert.equal(a1.json.passes.find((p) => p.familyId).left, 5, 'Mere uses the family pass');
+  const a2 = await coach.put('/api/attendance', { athleteId: kid.id, seriesId: series(), date: '2026-02-09', present: true });
+  assert.equal(a2.json.passes.find((p) => p.athleteId === kid.id).left, 11, 'Kai uses his own pass first');
+  assert.equal(a2.json.passes.find((p) => p.familyId).left, 5);
+  assert.equal((await boot(parent)).passes.filter((p) => p.familyId).length, 1, 'the parent sees the family pass');
+  assert.equal((await boot(coach)).passes.filter((p) => p.familyId).length, 1);
 });
 
 test('the coach or treasurer issues a pass with their own sessions and price; paid ones go in the books', async () => {
@@ -93,7 +119,7 @@ test('the coach or treasurer issues a pass with their own sessions and price; pa
   assert.equal(paid.json.pass.paidBy, 'cash');
   assert.equal(paid.json.transaction.amount, 30);
   assert.equal((await treasurer.put(`/api/passes/${later.json.pass.id}`, { paidBy: 'cash' })).status, 400, 'only once');
-  assert.equal((await parent.get('/api/bootstrap')).json.passes.every((p) => p.athleteId === kid.id), true, 'parents only see their own child\'s passes');
+  assert.ok((await parent.get('/api/bootstrap')).json.passes.every((p) => p.athleteId !== other.id), 'parents only see their own children\'s passes');
 });
 
 test('marking a child present uses a session; unticking gives it back; the oldest pass is used first', async () => {
@@ -111,7 +137,7 @@ test('marking a child present uses a session; unticking gives it back; the oldes
 
   const bulk = await coach.post('/api/attendance/bulk', { seriesId: series(), date: '2026-03-09', athleteIds: [other.id, kid.id] });
   assert.equal(bulk.status, 200, bulk.text);
-  assert.equal(bulk.json.passes.find((p) => p.athleteId === kid.id).left, 11);
+  assert.equal(bulk.json.passes.find((p) => p.athleteId === kid.id).left, 10);
   assert.equal(bulk.json.passes.find((p) => p.athleteId === other.id && p.sessions === 5).left, 4);
 
   // Used up: the next present mark moves to the next pass
@@ -127,7 +153,6 @@ test('passes can be cancelled, and other clubs can\'t touch them', async () => {
   const coach2 = await setUp((await app.auth.inviteUser({ clubId: club2, email: 'c2@pass.test', role: 'coach' })).url, 'c2@pass.test');
   assert.equal((await coach2.put(`/api/passes/${p.id}`, { status: 'cancelled' })).status, 404);
   assert.equal((await coach2.post(`/api/athletes/${other.id}/passes`, { sessions: 5, price: 1, paidBy: 'free' })).status, 404);
-  assert.equal((await coach2.put(`/api/squads/${dev.id}/pass`, { sessions: 5, price: 1 })).status, 404);
   assert.equal((await treasurer.put(`/api/passes/${p.id}`, { status: 'cancelled' })).json.pass.status, 'cancelled');
   assert.ok(!(await boot(coach)).passes.some((x) => x.id === p.id), 'cancelled passes are hidden');
 });

@@ -202,15 +202,15 @@ test('club fees: a club connects its own Stripe account and parent payments go t
   const kid = (await coach.post('/api/athletes', { name: 'Pay Kid', squadId: squad.id, email: 'fam@pay.test' })).json.athlete;
   const invite = await coach.post('/api/users/invite', { email: 'fam@pay.test', role: 'parent', athleteIds: [kid.id] });
   const parent = await finishSetup(await emailedLink(app, 'fam@pay.test'), 'fam@pay.test');
-  await coach.put('/api/club/pass', { sessions: 10, price: 100 });
+  const offer = (await coach.post(`/api/athletes/${kid.id}/passes`, { sessions: 10, price: 100, paidBy: 'offer' })).json.pass;
 
-  assert.equal((await parent.post('/api/checkout/pass', { athleteId: kid.id })).status, 503, 'no payments until the club connects Stripe');
+  assert.equal((await parent.post('/api/checkout/pass', { passId: offer.id })).status, 503, 'no payments until the club connects Stripe');
   const connect = await coach.post('/api/club/connect');
   assert.equal(connect.json.url, 'https://connect.stripe.test/onboarding');
   const refreshed = await coach.post('/api/club/connect/refresh');
   assert.equal(refreshed.json.club.payments.connected, true);
 
-  const pay = await parent.post('/api/checkout/pass', { athleteId: kid.id });
+  const pay = await parent.post('/api/checkout/pass', { passId: offer.id });
   assert.equal(pay.status, 200, pay.text);
   const call = stripe.calls.findLast((c) => c.name === 'checkout.sessions.create');
   assert.deepEqual(call.args[1], { stripeAccount: 'acct_club' }, "the parent's payment is created on the club's own account");

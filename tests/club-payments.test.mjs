@@ -116,8 +116,8 @@ test('with both offered, the club sets each family to card or bank; card is one 
   const quantities = call.args[0].line_items.map((l) => l.quantity).sort();
   assert.equal(quantities.reduce((s, q) => s + q, 0), 3, 'a line for every child');
   assert.equal(call.args[0].metadata.familyId, String(fam.id));
-  await coach.put('/api/club/pass', { sessions: 10, price: 100 });
-  assert.equal((await parent.post('/api/checkout/pass', { athleteId: sam.id })).status, 200, 'passes are per child');
+  const offer = (await coach.post(`/api/athletes/${sam.id}/passes`, { sessions: 10, price: 100, paidBy: 'offer' })).json.pass;
+  assert.equal((await parent.post('/api/checkout/pass', { passId: offer.id })).status, 200, 'a pass offered to one child');
 });
 
 test('card families: Stripe confirms, every child shows paid, and group moves update the card payment', async () => {

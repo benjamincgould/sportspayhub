@@ -221,30 +221,32 @@ try {
   await coach.getByText('Fox family now pays by bank transfer').waitFor();
   step('With both offered, the club (not the parent) sets each family to card or bank; the parent sees one family page');
 
-  // ---------- Session passes ----------
+  // ---------- Financial year and session passes ----------
   await coach.getByRole('button', { name: 'Settings' }).click();
-  await coach.getByLabel('Sessions per pass').fill('6');
-  await coach.getByLabel('Price of a pass').fill('60');
-  await coach.getByRole('button', { name: 'Save pass' }).click();
-  await coach.getByText('Pass saved: 6 sessions for $60.00').waitFor();
   await coach.getByLabel('Financial year start month').selectOption('7');
   await coach.getByText(/Your year runs 1 July to 30 June/).waitFor();
   await coach.getByRole('button', { name: 'Save settings' }).click();
   await coach.getByText('Settings saved').waitFor();
+  step('The coach sets a 1 July financial year');
+
   await coach.getByRole('button', { name: 'Players', exact: true }).click();
-  if (!(await coach.getByRole('button', { name: 'Give a pass' }).count())) await coach.getByRole('button', { name: /Tama Fox/ }).first().click();
-  await coach.getByRole('button', { name: 'Give a pass' }).click();
-  if (await coach.getByLabel('Number of sessions').inputValue() !== '6') fail('the pass form should start with the club\'s pass');
+  if (!(await coach.getByRole('button', { name: 'Offer or give a pass' }).count())) await coach.getByRole('button', { name: /Tama Fox/ }).first().click();
+  await coach.getByRole('button', { name: 'Offer or give a pass' }).click();
   await coach.getByLabel('Number of sessions').fill('5');
   await coach.getByLabel('Pass price').fill('55');
-  await coach.getByLabel('Paid by').selectOption('cash');
-  await coach.getByRole('button', { name: 'Give pass' }).click();
-  await coach.getByText('Tama has a 5-session pass').waitFor();
+  await coach.getByRole('button', { name: 'Offer pass' }).click();
+  await coach.getByText('Pass offered: Tama can buy 5 sessions for $55.00').waitFor();
+  await parent.reload();
+  await parent.getByText('The club has offered you a session pass →').click();
+  await parent.getByText(/The club is offering Tama a pass:/).waitFor();
+  await parent.getByText(/To buy it, pay \$55\.00/).waitFor();
+  await coach.getByRole('button', { name: 'Paid by bank' }).click();
+  await coach.getByText('Pass marked paid').waitFor();
   await coach.getByText('5 of 5 sessions left').waitFor();
   await parent.reload();
   await parent.getByRole('button', { name: 'Payments' }).click();
   await parent.getByText('5 sessions left').waitFor();
-  step('The coach sets the club\'s pass (sessions and price) and a 1 July financial year, then gives a player a pass; the parent sees the sessions left');
+  step('The coach offers Tama a pass (5 sessions, $55); the parent sees the offer, pays by bank, the coach marks it paid and it starts');
 
   await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();

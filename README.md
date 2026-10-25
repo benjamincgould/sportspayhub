@@ -110,12 +110,12 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
   - **Card, through Stripe:** into the club's own Stripe account (a coach taps **Connect Stripe** in Settings). One automatic payment covers all the children. Stripe keeps a small fee from each payment.
   - **Bank transfer:** no fees. Parents see the club's account, their family reference (like `PARKERF12`) and steps to set up one free automatic payment in their banking app. The treasurer or coach taps **Record payment** next to the family as money arrives; that marks the family paid and adds the income to the club's books.
   - Moving a family from card to bank stops their card payments at the end of the period already paid, so nobody pays twice.
-- **Session passes** (for children who don't come every week):
-  - One pass for the whole club, whatever the group: the coach or treasurer sets how many sessions it has and the price in Settings → **Session Pass**.
-  - Parents paying by card can buy one for each child on their Payments page.
-  - The coach or treasurer can also give any child a pass from their record (**Give a pass**): type the number of sessions and the price, and say how it was paid (bank transfer, cash, not paid yet, or free). Money received goes into the books.
-  - Each session the coach marks the child **present** uses one; unticking gives it back. The sessions left show on the attendance list, the child's record and the parent's Payments page. Staff can correct the sessions left, mark an unpaid pass paid, or cancel a pass.
-
+- **Session passes** (for children who don't come every week): there's no club-wide pass. The coach or treasurer makes each one from a child's record in Athletes (**Offer or give a pass**):
+  - **Who it's for:** that child, or their whole family (the sessions are shared by the brothers and sisters).
+  - **The number of sessions and the price**, chosen for that child or family.
+  - **How it's paid:** *offer it to the parents to buy*, or give it now (already paid by bank transfer or cash, paid later, or free). Money received goes into the books.
+  - Parents see an offer on their Payments page (and a note on Home). Card families tap **Buy it by card** and the pass starts by itself; bank families pay with their family reference and staff tap **Paid by bank** to start it. Staff can withdraw an offer.
+  - Each session the coach marks a child **present** uses one (their own pass first, then the family's); unticking gives it back. Sessions left show on the attendance list, the child's record and the parent's Payments page. Staff can correct the sessions left or cancel a pass.
 - **Financial year:** each club picks the day its year starts (Settings → Finance Settings), e.g. 1 April, 1 July or a charity's or company's own balance date. Year-to-date figures and the GST and financial reports follow it.
 
 ## Day-to-day admin
