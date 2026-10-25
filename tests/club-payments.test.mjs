@@ -92,3 +92,40 @@ test('another club never sees these bank details', async () => {
   assert.equal((await methods(oc)).bank, null);
   assert.equal((await oc.post(`/api/athletes/${kid.id}/payment`, { amount: 5 })).status, 404);
 });
+
+test('each child can be paid a different way: one by bank, the other by card', async () => {
+  // The club offers both (from the previous test); a second child for the same parent
+  const sq = (await coach.get('/api/bootstrap')).json.squads[0];
+  const mia = (await coach.post('/api/athletes', { name: 'Mia Parker', squadId: sq.id, frequency: 'monthly' })).json.athlete;
+  const parentId = (await app.one("select id from app.profiles where email = 'fam@bank.test'")).id;
+  await coach.put(`/api/users/${parentId}/athletes`, { athleteIds: [kid.id, mia.id] });
+
+  assert.equal((await parent.put(`/api/athletes/${kid.id}/pay-method`, { method: 'cheque' })).status, 400);
+  const leo = await parent.put(`/api/athletes/${kid.id}/pay-method`, { method: 'bank' });
+  assert.equal(leo.status, 200, leo.text);
+  assert.equal(leo.json.athlete.payMethod, 'bank');
+  assert.equal((await parent.put(`/api/athletes/${mia.id}/pay-method`, { method: 'card' })).json.athlete.payMethod, 'card');
+  const kids = (await parent.get('/api/bootstrap')).json.athletes;
+  assert.deepEqual(kids.map((k) => [k.name, k.payMethod]).sort(), [['Leo Parker', 'bank'], ['Mia Parker', 'card']]);
+
+  // Staff can change it too, from the child's record
+  assert.equal((await treasurer.put(`/api/athletes/${mia.id}`, { payMethod: 'bank' })).json.athlete.payMethod, 'bank');
+  assert.equal((await treasurer.put(`/api/athletes/${mia.id}/pay-method`, { method: 'card' })).json.athlete.payMethod, 'card');
+
+  // A method the club doesn't offer can't be chosen
+  await coach.put('/api/club/payment-methods', { card: false });
+  assert.equal((await parent.put(`/api/athletes/${mia.id}/pay-method`, { method: 'card' })).status, 400);
+  await coach.put('/api/club/payment-methods', { card: true });
+});
+
+test('moving a child from card to bank stops their card payments after the time already paid', async () => {
+  await app.query(`insert into app.billing (athlete_id, data) values ($1, '{"customerId":"cus_leo","subscriptionId":"sub_leo","status":"paid"}')
+                   on conflict (athlete_id) do update set data = excluded.data`, kid.id);
+  await parent.put(`/api/athletes/${kid.id}/pay-method`, { method: 'card' });
+  const r = await parent.put(`/api/athletes/${kid.id}/pay-method`, { method: 'bank' });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.json.cardStopsOn, 'says when card payments end');
+  assert.equal(r.json.athlete.cardStopping, true);
+  const back = await parent.put(`/api/athletes/${kid.id}/pay-method`, { method: 'card' });
+  assert.equal(back.json.athlete.cardStopping, false, 'switching back keeps the card payments going');
+});

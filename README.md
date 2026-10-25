@@ -107,7 +107,7 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 - **Parents pay their club**, and each club chooses how in Settings → **How Parents Pay** (the coach or the treasurer can change it):
   - **Card, through Stripe:** into the club's own Stripe account (a coach taps **Connect Stripe** in Settings). Automatic, and Stripe keeps a small fee from each payment.
   - **Bank transfer:** no fees. Parents see the club's account, a reference for their child (like `LEOPARKER12`) and steps to set up a free automatic payment in their banking app. The treasurer or coach taps **Record payment** on the Home screen as money arrives; that marks the family paid and adds the income to the club's books.
-  - Or **both**, side by side.
+  - Or **both**. Then each child is paid for one way, chosen per child: a parent can pay for one child by bank and another by card (on their Payments page). The coach or treasurer can also set it in the child's record (**Pays by**). Moving a child from card to bank stops their card payments at the end of the period already paid, so nobody pays twice.
 
 ## Day-to-day admin
 

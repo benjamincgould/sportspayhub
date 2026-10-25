@@ -673,7 +673,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const startEditAthlete = (a) => {
     setEditingAthleteId(a.id);
     setAthleteDraft({
-      squadId: a.squadId, frequency: a.frequency, status: a.status,
+      squadId: a.squadId, frequency: a.frequency, status: a.status, payMethod: a.payMethod || '',
       parent: a.parent || '', phone: a.phone || '', email: a.email || '', address: a.address || '',
       ...(isCoach ? { emergency: a.emergency || '', allergies: a.allergies || '', medication: a.medication || '' } : {}),
     });
@@ -1113,6 +1113,30 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const cardOn = !remote || club.payments?.card !== false;
   const bankDetails = remote ? club.payments?.bank || null : null;
   const payRef = parentAthlete ? (parentAthlete.payRef || `${String(parentAthlete.name || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10)}${parentAthlete.id}`) : '';
+  // Each child is paid for one way. With both offered, the parent chooses per child.
+  const bothOffered = cardOn && Boolean(bankDetails);
+  const methodFor = (a) => (!a ? null
+    : bothOffered ? (a.payMethod || (a.hasSubscription ? 'card' : null))
+    : bankDetails ? 'bank' : 'card');
+  const parentMethod = methodFor(parentAthlete);
+  const showBank = Boolean(bankDetails) && parentMethod !== 'card';
+  const showCard = cardOn && parentMethod !== 'bank';
+
+  const choosePayMethod = async (method) => {
+    if (!remote) { updateAthlete(parentAthlete.id, { payMethod: method }); return; }
+    setBusy('method');
+    try {
+      const res = await api(`/api/athletes/${parentAthlete.id}/pay-method`, { method: 'PUT', body: { method } });
+      replaceAthlete(res.athlete);
+      showFlash(method === 'bank'
+        ? `${parentAthlete.name} will be paid for by bank transfer${res.cardStopsOn ? `. Card payments stop after ${fmtShort(res.cardStopsOn)}` : ''}`
+        : `${parentAthlete.name} will be paid for by card`);
+    } catch (e) {
+      if (!e.signedOut) showFlash(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
 
   const renderPayments = () => (
     <div className="space-y-4">
@@ -1125,7 +1149,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <p className="text-xs text-indigo-100">Current Plan · {parentSquad.name}</p>
         <p className="text-lg font-bold">{FREQ_TITLE[parentAthlete.frequency]} ({money(priceFor(parentAthlete))}/{FREQ_LABEL[parentAthlete.frequency]})</p>
         <p className="text-xs mt-2 text-indigo-100">
-          {parentAthlete.cardLast4 ? `Card ending in •••• ${parentAthlete.cardLast4}` : cardOn ? 'No card on file' : `Paying by bank transfer · reference ${payRef}`}
+          {parentAthlete.cardLast4 ? `Card ending in •••• ${parentAthlete.cardLast4}` : parentMethod === 'bank' || !cardOn ? `Paying by bank transfer · reference ${payRef}` : 'No card on file'}
           {parentAthlete.nextBillingDate && ` · next payment ${fmtShort(parentAthlete.nextBillingDate)}`}
         </p>
       </div>
@@ -1156,7 +1180,24 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         )}
       </div>
 
-      {bankDetails && (
+      {bothOffered && (
+        <div className={`${card} space-y-2`}>
+          <h3 className="font-semibold text-sm">How will you pay for {parentAthlete.name}?</h3>
+          <div className="grid grid-cols-2 gap-2">
+            {[['bank', 'Bank transfer', 'No fees'], ['card', 'Card', 'Automatic, through Stripe']].map(([m, label, hint]) => (
+              <button key={m} type="button" onClick={() => choosePayMethod(m)} disabled={busy === 'method'} aria-pressed={parentMethod === m}
+                className={`p-3 rounded-lg border text-left disabled:opacity-60 ${parentMethod === m ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}>
+                <span className={`block text-sm font-semibold ${parentMethod === m ? 'text-indigo-700' : 'text-slate-700'}`}>{label}</span>
+                <span className="block text-[11px] text-slate-500">{hint}</span>
+              </button>
+            ))}
+          </div>
+          {parentAthletes.length > 1 && <p className="text-[11px] text-slate-400">Each child can be paid for a different way.</p>}
+          {parentAthlete.cardStopping && <p className="text-[11px] text-amber-700">Card payments for {parentAthlete.name} stop at the end of the period already paid{parentAthlete.nextBillingDate ? ` (${fmtShort(parentAthlete.nextBillingDate)})` : ''}.</p>}
+        </div>
+      )}
+
+      {showBank && (
         <div className={`${card} space-y-2 text-sm`}>
           <h3 className="font-semibold text-sm">Pay by bank transfer</h3>
           <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
@@ -1180,26 +1221,26 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         </div>
       )}
 
-      {cardOn && (parentAthlete.hasSubscription ? (
+      {showCard && (parentAthlete.hasSubscription ? (
         <button onClick={openBillingPortal} disabled={busy === 'portal'} className={`w-full ${primaryBtn} bg-slate-800`}>
           <CreditCard size={14} /> {busy === 'portal' ? 'Opening…' : 'Update card / manage billing'}
         </button>
       ) : (
         <button onClick={startAutoPay} disabled={busy === 'autopay'} className={`w-full ${primaryBtn}`}>
-          <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `${bankDetails ? 'Or pay by card: ' : ''}set up automatic ${FREQ_TITLE[parentAthlete.frequency].toLowerCase()} card payments`}
+          <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `${showBank ? 'Or pay by card: ' : 'Set up '}${showBank ? 'set up ' : ''}automatic ${FREQ_TITLE[parentAthlete.frequency].toLowerCase()} card payments`}
         </button>
       ))}
 
-      {cardOn && (
+      {showCard && (
         <button onClick={buyPass} disabled={busy === 'pass'} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm shadow-sm disabled:opacity-50">
           {busy === 'pass' ? 'Opening secure checkout…' : `Buy 10-Session Pass by card (${money(parentSquad.pass)})`}
         </button>
       )}
-      {!cardOn && bankDetails && (
+      {!showCard && showBank && (
         <p className="text-[11px] text-slate-500 text-center">For a 10-session pass ({money(parentSquad.pass)}), pay the same account with reference <span className="font-mono">{payRef}</span>.</p>
       )}
 
-      {cardOn && (
+      {showCard && (
         <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
           <Shield size={11} /> {!remote ? 'Demo mode — no real payments are taken.' : paymentsConnected ? 'Card payments are processed securely by Stripe. Card details never touch this app.' : "Card payments aren't switched on yet."}
         </p>
@@ -1305,10 +1346,10 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
           <div className="flex justify-between items-center">
             <div>
               <p className="font-medium">{a.name}</p>
-              <p className="text-xs text-slate-400">{squadById(a.squadId)?.name} · {a.autoDebit ? `card auto-pay ${a.frequency}` : `ref ${a.payRef || a.id}`}{a.lastPaidOn ? ` · last paid ${fmtShort(a.lastPaidOn)}` : ''}</p>
+              <p className="text-xs text-slate-400">{squadById(a.squadId)?.name} · {methodFor(a) === 'bank' || (!a.autoDebit && !bothOffered && bankDetails) ? `bank · ref ${a.payRef || a.id}` : a.autoDebit ? `card auto-pay ${a.frequency}` : methodFor(a) === 'card' ? 'card · not set up yet' : `ref ${a.payRef || a.id}`}{a.lastPaidOn ? ` · last paid ${fmtShort(a.lastPaidOn)}` : ''}</p>
             </div>
             <div className="flex items-center gap-2">
-              {!a.hasSubscription && (
+              {(!a.hasSubscription || methodFor(a) === 'bank') && (
                 <button onClick={() => setRecording(recording?.id === a.id ? null : { id: a.id, amount: String(priceFor(a) || '') })} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-medium">Record payment</button>
               )}
               {a.status === 'overdue' && (
@@ -1462,6 +1503,15 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                     {Object.keys(FREQ_TITLE).map((f) => <option key={f} value={f}>{FREQ_TITLE[f]}</option>)}
                   </select>
                 </Field>
+                {bothOffered && (
+                  <Field label="Pays by">
+                    <select className={inputCls} value={athleteDraft.payMethod || ''} onChange={(e) => setAthleteDraft({ ...athleteDraft, payMethod: e.target.value })}>
+                      {!athleteDraft.payMethod && <option value="">Not chosen yet</option>}
+                      <option value="bank">Bank transfer</option>
+                      <option value="card">Card (Stripe)</option>
+                    </select>
+                  </Field>
+                )}
                 <Field label={remote && a.hasSubscription ? 'Status (from Stripe)' : 'Status'}>
                   <select className={inputCls} disabled={remote && a.hasSubscription} value={athleteDraft.status} onChange={(e) => setAthleteDraft({ ...athleteDraft, status: e.target.value })}>
                     <option value="paid">Paid</option>

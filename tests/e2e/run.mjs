@@ -196,6 +196,24 @@ try {
   step('The coach records the bank payment: marked paid, and the income goes in the books');
 
   await coach.getByRole('button', { name: 'Settings' }).click();
+  await coach.locator('form', { hasText: 'How Parents Pay' }).getByLabel(/Card, through Stripe/).check();
+  await coach.locator('form', { hasText: 'How Parents Pay' }).getByRole('button', { name: 'Save payment options' }).click();
+  await coach.getByText('Payment options saved').waitFor();
+  await parent.reload();
+  await parent.getByRole('button', { name: 'Payments' }).click();
+  await parent.getByText('How will you pay for Tama Fox?').waitFor();
+  await parent.getByRole('button', { name: /^Bank transfer/ }).click();
+  await parent.getByText('Tama Fox will be paid for by bank transfer').waitFor();
+  await parent.getByText('Pay by bank transfer').waitFor();
+  if (await parent.getByRole('button', { name: /card payments/ }).count()) fail('with bank chosen for this child, the card buttons should be hidden');
+  await parent.getByRole('button', { name: /^Card/ }).click();
+  await parent.getByText('Tama Fox will be paid for by card').waitFor();
+  if (await parent.getByText('Pay by bank transfer').count()) fail('with card chosen, the bank details should be hidden');
+  await parent.getByRole('button', { name: /^Bank transfer/ }).click();
+  await parent.getByText('Tama Fox will be paid for by bank transfer').waitFor();
+  step('With both offered, the parent chooses per child: bank transfer or card');
+
+  await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();
   await coach.getByRole('button', { name: 'Pay $120.00 by card' }).waitFor();
   await coach.getByText('Or pay by bank transfer').waitFor();
