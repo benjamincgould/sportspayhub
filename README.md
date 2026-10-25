@@ -99,7 +99,10 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 
 - **Clubs pay you** a monthly fee into your Stripe account: **$49 NZD** by default (`PLATFORM_PRICE_NZD`), or a price you set for that club.
 - **Set-up fees:** set one per club (or a default for every new club with `PLATFORM_SETUP_FEE_NZD`). It's added once to the club's first subscription payment. For a club you've given free access, it's sent as a payment request straight away.
-- **Charge a club any time:** in the Owner Console, open a club's **Price & charges**, enter an amount and what it's for, and tap **Send payment request**. The club's coaches get an email with a secure Stripe payment page (open for 14 days), and it shows in their Settings with a **Pay** button. You see when it's paid, and you can cancel it until then.
+- **How clubs pay you** (Owner Console → **Payment details**): card through Stripe, bank transfer, or both.
+  - **Card:** needs Stripe. Charges are marked paid automatically, and Stripe pays the money into the bank account you gave Stripe.
+  - **Bank transfer:** works without Stripe and has no fees. You enter your account name and number once. Each request shows them with a reference (like `INV00012`), and you tap **Mark paid** when the money arrives.
+- **Charge a club any time:** in the Owner Console, open a club's **Price & charges**, enter an amount and what it's for, and tap **Send payment request**. The club's coaches get an email with the ways to pay (14 days to pay), and it shows in their Settings. You can mark it paid, or cancel it until it's paid.
 - **Changing a paying club's price** moves their subscription to the new price from their next bill, with no extra charge for the change itself.
 - **Parents pay their club** through Stripe Connect, into the club's own Stripe account. A coach taps **Connect Stripe** in Settings. That money never passes through your account.
 
@@ -121,6 +124,8 @@ The app fills the whole screen on phones, tablets and computers. On a computer i
 To get it on a phone's home screen, where it opens full screen like a normal app with no browser bars:
 - **iPhone:** open the app in Safari, tap **Share**, then **Add to Home Screen**.
 - **Android:** open it in Chrome, tap **⋮**, then **Add to Home screen** (or **Install app**).
+
+**Changing your email** (anyone, including you): Settings → Your Account (or My account in the Owner Console) → **Change email**. You enter your password, and the new address gets a link to confirm; the email only changes once that link is opened. The old address is told, too. The address the app's emails come *from* is separate: that's `EMAIL_FROM` in Vercel. To send from your business domain, verify the domain in Resend first.
 
 **Known limit:** one email address belongs to one club. A parent with children in two clubs needs a different email for the second.
 

@@ -143,9 +143,9 @@ export const tokenFromUrl = (url) => url.split('/').pop();
 // The newest sign-in link emailed to someone (tests read the test mailbox, like a person reading their email)
 export async function emailedLink(app, email) {
   await app.settle();
-  const mail = app.mailer.outbox.findLast((m) => m.to === email && /#\/(invite|reset)\//.test(m.text));
+  const mail = app.mailer.outbox.findLast((m) => m.to === email && /#\/(invite|reset|email)\//.test(m.text));
   if (!mail) throw new Error(`No sign-in link was emailed to ${email}`);
-  return mail.text.match(/\S+#\/(?:invite|reset)\/[\w-]+/)[0];
+  return mail.text.match(/\S+#\/(?:invite|reset|email)\/[\w-]+/)[0];
 }
 
 export async function lastMail(app, email, subject = /./) {
@@ -177,6 +177,7 @@ export function fakeStripe() {
       create: rec('invoices.create', () => ({ id: `in_${calls.length}` })),
       finalizeInvoice: rec('invoices.finalizeInvoice', (id) => ({ id, hosted_invoice_url: `https://invoice.stripe.test/${id}` })),
       voidInvoice: rec('invoices.voidInvoice', (id) => ({ id, status: 'void' })),
+      pay: rec('invoices.pay', (id) => ({ id, status: 'paid' })),
     },
     invoiceItems: { create: rec('invoiceItems.create', { id: 'ii_1' }) },
     webhooks: {

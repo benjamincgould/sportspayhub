@@ -432,6 +432,36 @@ function SetPasswordScreen({ token, onDone }) {
   );
 }
 
+// ---------- Confirming a new email address ----------
+
+function ConfirmEmailScreen({ token, signedIn, onDone }) {
+  const [state, setState] = useState({ busy: false, error: '', email: null });
+  const confirm = async () => {
+    setState({ busy: true, error: '', email: null });
+    try {
+      const res = await api('/api/auth/email/confirm', { method: 'POST', body: { token } });
+      setState({ busy: false, error: '', email: res.email });
+    } catch (err) {
+      setState({ busy: false, error: err.message, email: null });
+    }
+  };
+  if (state.email) {
+    return (
+      <AuthShell title="Email changed">
+        <Alert tone="info">From now on, sign in with {state.email}.</Alert>
+        <button type="button" onClick={() => onDone(state.email)} className={primaryBtn}>{signedIn ? 'Back to the app' : 'Sign in'}</button>
+      </AuthShell>
+    );
+  }
+  return (
+    <AuthShell title="Confirm your new email" onBack={() => onDone(null)}>
+      <p className="text-sm text-slate-600">Tap the button to start using this email address to sign in.</p>
+      {state.error && <Alert>{state.error}</Alert>}
+      <button type="button" onClick={confirm} disabled={state.busy} className={primaryBtn}>{state.busy ? 'Confirming…' : 'Confirm new email'}</button>
+    </AuthShell>
+  );
+}
+
 // ---------- First-time set-up: the platform owner's account ----------
 // Open /#/setup once, with OWNER_SETUP_SECRET from the server settings. It closes for good once
 // an owner account exists.
@@ -500,7 +530,7 @@ function OwnerSetupScreen({ onBack }) {
 
 const readLinkFromHash = () => {
   if (window.location.hash === '#/setup') return { kind: 'setup' };
-  const m = window.location.hash.match(/^#\/(invite|reset)\/([\w-]{20,100})$/);
+  const m = window.location.hash.match(/^#\/(invite|reset|email)\/([\w-]{20,100})$/);
   return m ? { kind: m[1], token: m[2] } : null;
 };
 
@@ -560,6 +590,13 @@ export function AuthGate({ children }) {
 
   function renderScreen() {
   if (link?.kind === 'setup') return <OwnerSetupScreen onBack={() => setLink(null)} />;
+  if (link?.kind === 'email') {
+    return <ConfirmEmailScreen token={link.token} signedIn={session.stage === 'full'} onDone={(email) => {
+      setLink(null);
+      if (email && session.stage === 'full') setSession((s) => ({ ...s, user: { ...s.user, email } }));
+      else if (email) { setView('login'); setPrefill(email); setNotice('Your email is changed. Sign in with your new email address.'); }
+    }} />;
+  }
   if (link) {
     return <SetPasswordScreen token={link.token} onDone={(email) => { setLink(null); setView('login'); setPrefill(email || ''); setNotice(email ? 'Sign in with your new password.' : ''); }} />;
   }
@@ -617,6 +654,9 @@ export function AccountSecurity({ user, onUserChange, signOut, showFlash }) {
   const [name, setName] = useState(user.name || '');
   const [nameBusy, setNameBusy] = useState(false);
   const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
+  const [emailForm, setEmailForm] = useState(null); // { newEmail, password }
+  const [emailMsg, setEmailMsg] = useState('');
+  const [emailErr, setEmailErr] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
   const [pwError, setPwError] = useState('');
   const [mode, setMode] = useState(null); // null | 'setup' | 'codes' | 'disable' | 'newcodes'
@@ -636,6 +676,18 @@ export function AccountSecurity({ user, onUserChange, signOut, showFlash }) {
       showFlash(err.message);
     } finally {
       setNameBusy(false);
+    }
+  };
+
+  const changeEmail = async (e) => {
+    e.preventDefault();
+    setEmailErr('');
+    try {
+      const res = await api('/api/auth/email', { method: 'POST', body: emailForm });
+      setEmailMsg(res.message);
+      setEmailForm(null);
+    } catch (err) {
+      setEmailErr(err.message);
     }
   };
 
@@ -679,6 +731,28 @@ export function AccountSecurity({ user, onUserChange, signOut, showFlash }) {
           </div>
           <p className="text-[11px] text-slate-400">This is how the club sees you in the app. Your email stays the same.</p>
         </form>
+        <div className="pt-2 border-t border-slate-100 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-slate-700">Email address</p>
+            {!emailForm && <button type="button" onClick={() => { setEmailMsg(''); setEmailErr(''); setEmailForm({ newEmail: '', password: '' }); }} className="text-xs text-indigo-700 font-medium">Change email</button>}
+          </div>
+          <p className="text-xs text-slate-500">{user.email}</p>
+          {emailMsg && <Alert tone="info">{emailMsg}</Alert>}
+          {emailForm && (
+            <form onSubmit={changeEmail} className="space-y-2">
+              <label htmlFor="acct-new-email" className="text-sm font-medium text-slate-700">New email address</label>
+              <input id="acct-new-email" type="email" required maxLength={254} autoComplete="email" value={emailForm.newEmail} onChange={(e) => setEmailForm({ ...emailForm, newEmail: e.target.value })} className={inputCls} />
+              <input type="email" value={user.email} autoComplete="username" readOnly hidden />
+              <PasswordInput id="acct-email-pw" label="Your password" value={emailForm.password} onChange={(v) => setEmailForm({ ...emailForm, password: v })} autoComplete="current-password" />
+              <p className="text-[11px] text-slate-400">We'll email the new address a link to confirm. Your email only changes once you open it.</p>
+              {emailErr && <Alert>{emailErr}</Alert>}
+              <div className="flex gap-2">
+                <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold">Send confirmation</button>
+                <button type="button" onClick={() => { setEmailForm(null); setEmailErr(''); }} className="flex-1 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">Cancel</button>
+              </div>
+            </form>
+          )}
+        </div>
         <p className="text-sm font-medium text-slate-700 pt-2 border-t border-slate-100">Change password</p>
         <form onSubmit={changePassword} className="space-y-2">
           <input type="email" value={user.email} autoComplete="username" readOnly hidden />
@@ -750,6 +824,7 @@ const ACTION_LABELS = {
   invite_sent: 'Sent invite', invite_resent: 'Re-sent invite', invite_accepted: 'Accepted invite', parent_linked: 'Linked parent',
   reset_link_created: 'Made reset link', account_disabled: 'Switched off account', account_enabled: 'Switched on account',
   '2fa_reset_by_coach': 'Reset 2-step for someone', parent_links_changed: 'Changed linked athletes',
+  email_change_requested: 'Asked to change email', email_changed: 'Changed email',
   athlete_created: 'Added athlete', athlete_updated: 'Edited athlete', profile_updated: 'Parent updated details',
   plan_changed: 'Changed plan', squad_created: 'Added squad', squad_deleted: 'Deleted squad', transaction_added: 'Added transaction',
   checkout_started: 'Started payment', admin_created_from_server: 'Coach created from server',

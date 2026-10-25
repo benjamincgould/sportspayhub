@@ -145,14 +145,25 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
       {charges.length > 0 && (
         <div className={card}>
           <h3 className="font-semibold text-sm flex items-center gap-1.5"><CreditCard size={14} /> Payments to the App Provider</h3>
-          {openCharges.length > 0 && <p className="text-xs text-slate-600">You've been sent {openCharges.length === 1 ? 'a payment request' : `${openCharges.length} payment requests`}. Pay securely by card on Stripe's page.</p>}
+          {openCharges.length > 0 && <p className="text-xs text-slate-600">You've been sent {openCharges.length === 1 ? 'a payment request' : `${openCharges.length} payment requests`}.</p>}
           {openCharges.map((c) => (
-            <div key={c.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold truncate">{c.description}</p>
-                <p className="text-[11px] text-slate-500">${Number(c.amountNzd).toFixed(2)} · sent {new Date(c.createdAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}</p>
+            <div key={c.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold truncate">{c.description}</p>
+                  <p className="text-[11px] text-slate-500">${Number(c.amountNzd).toFixed(2)} · sent {new Date(c.createdAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}{c.reference ? ` · ref ${c.reference}` : ''}</p>
+                </div>
+                {c.payUrl && <button type="button" onClick={() => payCharge(c.payUrl)} className={`${btn} shrink-0`}>Pay ${Number(c.amountNzd).toFixed(2)} by card</button>}
               </div>
-              <button type="button" onClick={() => payCharge(c.payUrl)} disabled={!c.payUrl} className={`${btn} shrink-0`}>Pay ${Number(c.amountNzd).toFixed(2)}</button>
+              {c.bank && (
+                <div className="text-[11px] text-slate-700 bg-white rounded-md border border-amber-100 p-2 space-y-0.5">
+                  <p className="font-semibold">{c.payUrl ? 'Or pay by bank transfer' : 'Pay by bank transfer'}</p>
+                  <p>Account name: <span className="font-medium select-all">{c.bank.accountName}</span></p>
+                  <p>Account number: <span className="font-mono font-medium select-all">{c.bank.accountNumber}</span></p>
+                  <p>Reference: <span className="font-mono font-medium select-all">{c.reference}</span></p>
+                  {c.bank.instructions && <p className="text-slate-500">{c.bank.instructions}</p>}
+                </div>
+              )}
             </div>
           ))}
           {paidCharges.length > 0 && (

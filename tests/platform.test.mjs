@@ -1,7 +1,7 @@
 // Tests for what's new in the Next.js + Supabase version: Stripe webhook signatures, the hourly
 // clean-up, the first-time owner set-up, Supabase sessions ending on sign-out, and the database
 // refusing Supabase's public roles.
-import { startServer, browser, tokenFromUrl, totpNow, PASSWORD, SEED_SQUADS, fakeStripe, emailedLink } from './helpers.mjs';
+import { startServer, browser, tokenFromUrl, totpNow, PASSWORD, SEED_SQUADS, fakeStripe, emailedLink, lastMail } from './helpers.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -234,9 +234,38 @@ test('a database set up before migrations were tracked is brought up to date onc
     await fresh.query(fs.readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'));
     assert.equal((await browser(fresh.base).get('/api/platform')).status, 200);
     const ids = (await fresh.query('select id from app.schema_migrations order by id')).map((r) => r.id);
-    assert.deepEqual(ids, ['0001_init', '0002_platform_charges']);
+    assert.deepEqual(ids, ['0001_init', '0002_platform_charges', '0003_payment_details_and_email_change']);
     assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and not rowsecurity")).n, 0, 'new tables are locked too');
   } finally {
     await fresh.close();
   }
+});
+
+test('people can change their email: password needed, new address confirms, old address is told', async () => {
+  const clubId = await app.clubs.createClub({ name: 'Email Club', sport: 'Hockey', status: 'active' });
+  const { url } = await app.auth.inviteUser({ clubId, email: 'old@email.test', role: 'parent' });
+  await browser(app.base).post('/api/auth/accept', { token: tokenFromUrl(url), password: PASSWORD });
+  const b = browser(app.base);
+  await b.post('/api/auth/login', { email: 'old@email.test', password: PASSWORD });
+
+  assert.equal((await b.post('/api/auth/email', { newEmail: 'new@email.test', password: 'wrong password here' })).status, 400);
+  assert.equal((await b.post('/api/auth/email', { newEmail: 'not-an-email', password: PASSWORD })).status, 400);
+  assert.equal((await b.post('/api/auth/email', { newEmail: 'fam@session.test', password: PASSWORD })).status, 409, 'already used by someone');
+  const asked = await b.post('/api/auth/email', { newEmail: 'New@Email.test', password: PASSWORD });
+  assert.equal(asked.status, 200, asked.text);
+  assert.equal((await b.get('/api/auth/session')).json.user.email, 'old@email.test', 'nothing changes yet');
+  assert.ok((await lastMail(app, 'old@email.test', /Email change requested/)), 'the old address is told');
+
+  const link = await emailedLink(app, 'new@email.test');
+  assert.match(link, /#\/email\//);
+  assert.equal((await browser(app.base).post('/api/auth/accept', { token: tokenFromUrl(link), password: 'some new password here' })).status, 400, 'an email link cannot be used to set a password');
+  const done = await browser(app.base).post('/api/auth/email/confirm', { token: tokenFromUrl(link) });
+  assert.equal(done.status, 200, done.text);
+  assert.equal(done.json.email, 'new@email.test');
+  assert.equal((await browser(app.base).post('/api/auth/email/confirm', { token: tokenFromUrl(link) })).status, 400, 'works once');
+  assert.ok(await lastMail(app, 'old@email.test', /was changed/));
+
+  assert.equal((await b.get('/api/auth/session')).json.user.email, 'new@email.test', 'this device stays signed in');
+  assert.equal((await browser(app.base).post('/api/auth/login', { email: 'new@email.test', password: PASSWORD })).json.stage, 'full', 'signs in with the new email');
+  assert.equal((await browser(app.base).post('/api/auth/login', { email: 'old@email.test', password: PASSWORD })).status, 401, 'not the old one');
 });

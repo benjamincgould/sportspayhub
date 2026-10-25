@@ -18,8 +18,8 @@ process.env.OWNER_SETUP_SECRET = 'e2e-owner-setup-code-long-enough';
 const app = await startServer({ env: { APP_URL: BASE, PLATFORM_NAME: 'TeamDesk' }, staticDir: path.join(here, 'dist'), port: PORT, stripe: fakeStripe() });
 const linkFor = async (email) => {
   await app.settle();
-  const m = app.mailer.outbox.findLast((x) => x.to === email && /#\/(invite|reset)\//.test(x.text));
-  return m && m.text.match(/http\S+#\/(?:invite|reset)\/[\w-]+/)[0];
+  const m = app.mailer.outbox.findLast((x) => x.to === email && /#\/(invite|reset|email)\//.test(x.text));
+  return m && m.text.match(/http\S+#\/(?:invite|reset|email)\/[\w-]+/)[0];
 };
 
 const browser = await chromium.launch();
@@ -109,7 +109,17 @@ try {
   if ((await ownerPage.locator('body').innerText()).includes('Leo Parker')) fail('owner must not see member names');
   step('Owner gives the club free access, without seeing any members');
 
-  // ---------- Owner sets a price and charges the club ----------
+  // ---------- Owner adds bank details, sets a price and charges the club ----------
+  await ownerPage.getByRole('button', { name: 'Payment details' }).click();
+  await ownerPage.getByText('How clubs pay you').waitFor();
+  await ownerPage.getByLabel(/Bank transfer/).check();
+  await ownerPage.getByLabel('Account name').fill('Pat Owner Ltd');
+  await ownerPage.getByLabel('Account number').fill('12 3456 0123456 00');
+  await ownerPage.getByRole('button', { name: 'Save payment details' }).click();
+  await ownerPage.getByText('Payment details saved').waitFor();
+  if ((await ownerPage.getByLabel('Account number').inputValue()) !== '12-3456-0123456-00') fail('account number should be tidied');
+  await ownerPage.getByRole('button', { name: 'Clubs', exact: true }).click();
+  step('Owner saves their bank details in Payment details');
   const clubCard = ownerPage.locator('div.bg-white', { hasText: 'Riverside Rugby' }).first();
   await clubCard.getByRole('button', { name: 'Price & charges' }).click();
   await ownerPage.getByLabel('Monthly price (NZD)').fill('39');
@@ -161,13 +171,44 @@ try {
 
   await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();
-  await coach.getByRole('button', { name: 'Pay $120.00' }).waitFor();
+  await coach.getByRole('button', { name: 'Pay $120.00 by card' }).waitFor();
+  await coach.getByText('Or pay by bank transfer').waitFor();
+  await coach.getByText('12-3456-0123456-00').waitFor();
+  await coach.getByText(/INV\d{5}/).first().waitFor();
+  await coach.getByText('Payments to the App Provider').scrollIntoViewIfNeeded();
   await coach.screenshot({ path: `${here}/coach-desktop.png` });
   await coach.setViewportSize({ width: 390, height: 844 });
   await coach.getByRole('button', { name: 'Home' }).click();
   await coach.screenshot({ path: `${here}/coach-phone.png` });
   await coach.setViewportSize({ width: 1280, height: 800 });
-  step('The coach sees the payment request in Settings with a Pay button');
+  step('The coach sees the payment request with a card button and the owner\'s bank details and reference');
+
+  await ownerPage.getByRole('button', { name: 'Mark paid' }).click();
+  await ownerPage.getByRole('button', { name: 'Tap again' }).first().click();
+  await ownerPage.getByText('Marked as paid').waitFor();
+  await ownerPage.getByText(/paid by bank transfer/).waitFor();
+  step('The bank transfer arrives and the owner marks the charge paid');
+
+  // ---------- Owner changes their email ----------
+  await ownerPage.getByRole('button', { name: 'My account' }).click();
+  await ownerPage.getByRole('button', { name: 'Change email' }).click();
+  await ownerPage.fill('#acct-new-email', 'pat@business.test');
+  await ownerPage.fill('#acct-email-pw', PW);
+  await ownerPage.getByRole('button', { name: 'Send confirmation' }).click();
+  await ownerPage.getByText(/emailed pat@business.test a link/).waitFor();
+  const emailLink = await linkFor('pat@business.test');
+  await ownerPage.goto(emailLink);
+  await ownerPage.getByRole('button', { name: 'Confirm new email' }).click();
+  await ownerPage.getByText('From now on, sign in with pat@business.test.').waitFor();
+  await ownerPage.getByRole('button', { name: 'Back to the app' }).click();
+  await ownerPage.getByText('Owner Console').waitFor();
+  const check = await (await browser.newContext()).newPage();
+  await check.goto(BASE);
+  await check.fill('#login-email', 'pat@business.test');
+  await check.fill('#login-password', PW);
+  await check.getByRole('button', { name: 'Sign in' }).click();
+  await check.getByText('Enter your code').waitFor();
+  step('Owner changes their email: confirms from the new inbox, then signs in with it');
 
   // ---------- Lost phone: a recovery code ----------
   await coach.getByLabel('Sign out').click();

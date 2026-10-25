@@ -57,6 +57,12 @@ function ClubBilling({ club, defaults, onChanged, showFlash }) {
     setBusy('');
   };
 
+  const markPaid = async (id) => {
+    if (confirmVoid !== `paid-${id}`) { setConfirmVoid(`paid-${id}`); return; }
+    setConfirmVoid(null);
+    try { await api(`/api/owner/charges/${id}/mark-paid`, { method: 'POST' }); showFlash('Marked as paid'); loadCharges(); onChanged(); } catch (err) { showFlash(err.message); }
+  };
+
   const voidCharge = async (id) => {
     if (confirmVoid !== id) { setConfirmVoid(id); return; }
     setConfirmVoid(null);
@@ -96,11 +102,13 @@ function ClubBilling({ club, defaults, onChanged, showFlash }) {
         <label className="flex items-center gap-2 text-xs text-slate-600">
           <input type="checkbox" checked={charge.kind === 'setup'} onChange={(e) => setCharge({ ...charge, kind: e.target.checked ? 'setup' : 'oneoff' })} /> This is their set-up fee (so it isn't charged again when they subscribe)
         </label>
-        <p className="text-[11px] text-slate-500">The club's coaches get an email with a secure Stripe payment page. It also shows in their Settings. They have 14 days to pay.</p>
-        <button type="submit" disabled={busy !== '' || !defaults.stripe} className="w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1">
+        <p className="text-[11px] text-slate-500">
+          The club's coaches get an email{defaults.payMethods?.card ? ' with a secure card payment page' : ''}{defaults.payMethods?.bank ? `${defaults.payMethods?.card ? ' and' : ' with'} your bank details and a reference` : ''}. It also shows in their Settings. They have 14 days to pay.
+        </p>
+        <button type="submit" disabled={busy !== '' || !(defaults.payMethods?.card || defaults.payMethods?.bank)} className="w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1">
           <CreditCard size={12} /> {busy === 'charge' ? 'Sending…' : 'Send payment request'}
         </button>
-        {!defaults.stripe && <p className="text-[11px] text-amber-700">Add your Stripe keys in Vercel to charge clubs.</p>}
+        {!(defaults.payMethods?.card || defaults.payMethods?.bank) && <p className="text-[11px] text-amber-700">First set up how clubs pay you, in the Payment details tab.</p>}
       </form>
 
       <div className="space-y-1.5 pt-3 border-t border-slate-200">
@@ -113,11 +121,16 @@ function ClubBilling({ club, defaults, onChanged, showFlash }) {
             <div key={c.id} className="flex items-center justify-between gap-2 text-xs bg-white rounded-md border border-slate-100 p-2">
               <div className="min-w-0">
                 <p className="font-medium truncate">{c.description}</p>
-                <p className="text-[11px] text-slate-400">{nzd(c.amountNzd)} · {new Date(c.createdAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}{c.kind === 'setup' ? ' · set-up fee' : ''}</p>
+                <p className="text-[11px] text-slate-400">{nzd(c.amountNzd)} · {new Date(c.createdAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}{c.reference ? ` · ref ${c.reference}` : ''}{c.kind === 'setup' ? ' · set-up fee' : ''}{c.paidMethod ? ` · paid by ${c.paidMethod === 'bank' ? 'bank transfer' : c.paidMethod}` : ''}</p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${cls}`}>{label}</span>
                 {c.status === 'open' && c.payUrl && <a href={c.payUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-500" aria-label="Open payment page"><ExternalLink size={12} /></a>}
+                {c.status === 'open' && (
+                  <button type="button" onClick={() => markPaid(c.id)} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${confirmVoid === `paid-${c.id}` ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {confirmVoid === `paid-${c.id}` ? 'Tap again' : 'Mark paid'}
+                  </button>
+                )}
                 {c.status === 'open' && (
                   <button type="button" onClick={() => voidCharge(c.id)} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${confirmVoid === c.id ? 'bg-rose-600 text-white' : 'bg-slate-100 text-rose-700'}`}>
                     {confirmVoid === c.id ? 'Tap again' : 'Cancel'}
@@ -129,6 +142,69 @@ function ClubBilling({ club, defaults, onChanged, showFlash }) {
         })}
       </div>
     </div>
+  );
+}
+
+// How clubs pay you: card through Stripe, bank transfer, or both
+function PaymentDetails({ showFlash, onSaved }) {
+  const [s, setS] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api('/api/owner/payment-settings').then(setS).catch((e) => showFlash(e.message)); }, []);
+  if (!s) return <p className="text-sm text-slate-500">Loading…</p>;
+
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await api('/api/owner/payment-settings', { method: 'PUT', body: { card: s.card, bank: s.bank, bankAccountName: s.bankAccountName, bankAccountNumber: s.bankAccountNumber, instructions: s.instructions } });
+      setS(res);
+      showFlash('Payment details saved');
+      onSaved?.();
+    } catch (err) { showFlash(err.message); }
+    setBusy(false);
+  };
+
+  return (
+    <form onSubmit={save} className={`${card} space-y-4 text-sm`}>
+      <div>
+        <h3 className="font-semibold flex items-center gap-1.5"><CreditCard size={14} /> How clubs pay you</h3>
+        <p className="text-xs text-slate-500 mt-1">Every payment request you send shows the ways you turn on here. Monthly subscriptions are always by card through Stripe.</p>
+      </div>
+
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-1" checked={s.card} disabled={!s.stripeConnected} onChange={(e) => setS({ ...s, card: e.target.checked })} />
+        <span>
+          <span className="font-medium">Card, through Stripe</span>
+          <span className="block text-xs text-slate-500">Clubs pay on a secure page and it's marked paid automatically. Stripe pays the money into the bank account you give Stripe, usually within a few days (fee about 2.7% + 30c).</span>
+          {!s.stripeConnected && <span className="block text-xs text-amber-700 mt-1">Not available yet: add STRIPE_SECRET_KEY in Vercel and redeploy.</span>}
+        </span>
+      </label>
+
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-1" checked={s.bank} onChange={(e) => setS({ ...s, bank: e.target.checked })} />
+        <span>
+          <span className="font-medium">Bank transfer</span>
+          <span className="block text-xs text-slate-500">No fees. Requests show your account and a reference. When the money arrives, tap "Mark paid" on the charge.</span>
+        </span>
+      </label>
+
+      {s.bank && (
+        <div className="space-y-2 pl-6">
+          <label className="block text-xs text-slate-500">Account name
+            <input required value={s.bankAccountName} onChange={(e) => setS({ ...s, bankAccountName: e.target.value })} placeholder="e.g. Your Business Ltd" maxLength={80} className={field} />
+          </label>
+          <label className="block text-xs text-slate-500">Account number
+            <input required inputMode="numeric" value={s.bankAccountNumber} onChange={(e) => setS({ ...s, bankAccountNumber: e.target.value })} placeholder="12-3456-0123456-00" className={field} />
+          </label>
+          <label className="block text-xs text-slate-500">Note for payers (optional)
+            <input value={s.instructions} onChange={(e) => setS({ ...s, instructions: e.target.value })} placeholder="e.g. Please use the reference so we can match your payment" maxLength={200} className={field} />
+          </label>
+        </div>
+      )}
+
+      {!s.available.card && !s.available.bank && <p className="text-xs text-amber-700">Turn on at least one way to pay before sending payment requests.</p>}
+      <button type="submit" disabled={busy} className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{busy ? 'Saving…' : 'Save payment details'}</button>
+    </form>
   );
 }
 
@@ -197,7 +273,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
 
       <div className="border-b border-slate-200 bg-white md:px-8">
         <div className="flex max-w-3xl mx-auto">
-          {[['clubs', 'Clubs'], ['account', 'My account']].map(([k, label]) => (
+          {[['clubs', 'Clubs'], ['payments', 'Payment details'], ['account', 'My account']].map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)} className={`flex-1 md:flex-none md:px-6 py-2.5 text-sm font-medium ${tab === k ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-500'}`}>{label}</button>
           ))}
         </div>
@@ -206,6 +282,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
       <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="max-w-3xl mx-auto space-y-3">
         {tab === 'account' && <AccountSecurity user={user} onUserChange={updateUser} signOut={signOut} showFlash={showFlash} />}
+        {tab === 'payments' && <PaymentDetails showFlash={showFlash} onSaved={load} />}
 
         {tab === 'clubs' && (
           <>
@@ -295,7 +372,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                       </button>
                     )}
                   </div>
-                  {billingFor === c.id && <ClubBilling club={c} defaults={{ priceNzd: data.priceNzd, setupFeeNzd: data.setupFeeNzd, stripe: data.stripe }} onChanged={load} showFlash={showFlash} />}
+                  {billingFor === c.id && <ClubBilling club={c} defaults={{ priceNzd: data.priceNzd, setupFeeNzd: data.setupFeeNzd, stripe: data.stripe, payMethods: data.payMethods }} onChanged={load} showFlash={showFlash} />}
                   {deleting && deleting.id === c.id && (
                     <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg space-y-2">
                       <p className="text-xs text-rose-900">This permanently deletes {c.name}: every account, member, medical record, group, booking and ledger entry. Their subscription is cancelled. It can't be undone.</p>

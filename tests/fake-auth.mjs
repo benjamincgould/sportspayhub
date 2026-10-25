@@ -72,6 +72,12 @@ export function createFakeAuth(sql) {
       users.delete(userId);
       await sql`delete from auth.users where id = ${userId}`;
     },
+    async setEmail(userId, email) {
+      calls.push(['setEmail', userId, email]);
+      if ([...users.values()].some((u) => u.email === email)) throw new HttpError(409, 'That email address already has an account.');
+      users.get(userId).email = email;
+      await sql`update auth.users set email = ${email} where id = ${userId}`;
+    },
     async setBanned(userId, banned) {
       calls.push(['setBanned', userId, banned]);
       users.get(userId).banned = banned;

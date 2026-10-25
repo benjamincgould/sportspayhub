@@ -143,7 +143,52 @@ test('without Stripe set up, charging explains what to do', async () => {
     await o.post('/api/auth/2fa/confirm', { code: await totpNow(setup.json.secret) });
     const clubId = await bare.clubs.createClub({ name: 'Bare', sport: 'Rowing', status: 'comped' });
     const r = await o.post(`/api/owner/clubs/${clubId}/charges`, { amountNzd: 10, description: 'x' });
-    assert.equal(r.status, 503);
-    assert.match(r.json.error, /STRIPE_SECRET_KEY/);
+    assert.equal(r.status, 503, 'no way to pay set up yet');
+    assert.match(r.json.error, /bank details|STRIPE_SECRET_KEY/);
+
+    // Bank transfer works without Stripe
+    assert.equal((await o.put('/api/owner/payment-settings', { bank: true, bankAccountName: 'Owner Ltd', bankAccountNumber: '12-34' })).status, 400, 'checks the account number');
+    assert.equal((await o.put('/api/owner/payment-settings', { bank: true, bankAccountName: '' , bankAccountNumber: '12-3456-0123456-00' })).status, 400, 'needs a name');
+    const saved = await o.put('/api/owner/payment-settings', { bank: true, bankAccountName: 'Owner Ltd', bankAccountNumber: '1234560123456 00', instructions: 'Use the reference please' });
+    assert.equal(saved.status, 200, saved.text);
+    assert.equal(saved.json.bankAccountNumber, '12-3456-0123456-00', 'tidied into the usual format');
+    assert.deepEqual(saved.json.available, { card: false, bank: true });
+
+    const { url: coachUrl } = await bare.auth.inviteUser({ clubId, email: 'c@bare.test', role: 'coach' });
+    const coach = browser(bare.base);
+    await coach.post('/api/auth/accept', { token: tokenFromUrl(coachUrl), password: PASSWORD });
+    await coach.post('/api/auth/login', { email: 'c@bare.test', password: PASSWORD });
+    const cs = await coach.post('/api/auth/2fa/setup');
+    await coach.post('/api/auth/2fa/confirm', { code: await totpNow(cs.json.secret) });
+
+    const charged = await o.post(`/api/owner/clubs/${clubId}/charges`, { amountNzd: 75, description: 'Set-up' });
+    assert.equal(charged.status, 200, charged.text);
+    assert.match(charged.json.charge.reference, /^INV\d{5}$/);
+    assert.equal(charged.json.charge.payUrl, null, 'no card page without Stripe');
+    const mail = await lastMail(bare, 'c@bare.test', /Payment request/);
+    for (const bit of ['12-3456-0123456-00', 'Owner Ltd', charged.json.charge.reference, 'Use the reference please']) assert.ok(mail.text.includes(bit), bit);
+    const seen = (await coach.get('/api/club/charges')).json[0];
+    assert.equal(seen.bank.accountNumber, '12-3456-0123456-00', 'the club sees where to pay');
+    assert.equal(seen.reference, charged.json.charge.reference);
+
+    assert.equal((await coach.post(`/api/owner/charges/${seen.id}/mark-paid`)).status, 403, 'only the owner marks it paid');
+    const paid = await o.post(`/api/owner/charges/${seen.id}/mark-paid`);
+    assert.equal(paid.json.charge.status, 'paid');
+    assert.equal(paid.json.charge.paidMethod, 'bank');
+    const after = (await coach.get('/api/club/charges')).json[0];
+    assert.equal(after.status, 'paid');
+    assert.equal(after.bank, null, 'bank details are only shown for unpaid requests');
+    assert.equal((await o.post(`/api/owner/charges/${seen.id}/mark-paid`)).status, 409);
   } finally { await bare.close(); }
+});
+
+test('with both card and bank set up, a request offers both; marking it paid closes the card page', async () => {
+  await owner.put('/api/owner/payment-settings', { card: true, bank: true, bankAccountName: 'Owner Ltd', bankAccountNumber: '12-3456-0123456-00' });
+  const r = await owner.post(`/api/owner/clubs/${paying.id}/charges`, { amountNzd: 30, description: 'Both ways' });
+  assert.ok(r.json.charge.payUrl, 'card page');
+  const mail = await lastMail(app, 'pat@pricey.test', /Payment request/);
+  assert.ok(mail.text.includes(r.json.charge.payUrl) && mail.text.includes('12-3456-0123456-00'), 'both ways to pay in the email');
+  await owner.post(`/api/owner/charges/${r.json.charge.id}/mark-paid`);
+  assert.equal(lastCall('invoices.pay').args[1].paid_out_of_band, true, 'the Stripe page is closed so they can\'t pay twice');
+  await owner.put('/api/owner/payment-settings', { bank: false });
 });
