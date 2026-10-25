@@ -97,14 +97,14 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 
 ## How the money works
 
-- **Clubs pay you** a monthly fee into your Stripe account (Stripe's fee comes out of what you receive, so clubs pay exactly your price): **$49 NZD** by default (`PLATFORM_PRICE_NZD`), or a price you set for that club.
-- **Parents pay their club:** a coach taps **Connect Stripe** in Settings so the club gets its own Stripe account. Parents pay by card through your platform's Stripe account, and the **full amount** is passed straight on to the club's account; Stripe's fee comes out of *your* balance, not the club's. The club's name appears on the parent's card statement. If you don't want to pay those fees either, clubs can simply not connect Stripe and take bank transfers.
+- **Clubs pay you** a monthly fee into your Stripe account: **$49 NZD** by default (`PLATFORM_PRICE_NZD`), or a price you set for that club.
 - **Set-up fees:** set one per club (or a default for every new club with `PLATFORM_SETUP_FEE_NZD`). It's added once to the club's first subscription payment. For a club you've given free access, it's sent as a payment request straight away.
 - **How clubs pay you** (Owner Console → **Payment details**): card through Stripe, bank transfer, or both.
   - **Card:** needs Stripe. Charges are marked paid automatically, and Stripe pays the money into the bank account you gave Stripe.
   - **Bank transfer:** works without Stripe and has no fees. You enter your account name and number once. Each request shows them with a reference (like `INV00012`), and you tap **Mark paid** when the money arrives.
 - **Charge a club any time:** in the Owner Console, open a club's **Price & charges**, enter an amount and what it's for, and tap **Send payment request**. The club's coaches get an email with the ways to pay (14 days to pay), and it shows in their Settings. You can mark it paid, or cancel it until it's paid.
 - **Changing a paying club's price** moves their subscription to the new price from their next bill, with no extra charge for the change itself.
+- **Parents pay their club** through Stripe Connect, into the club's own Stripe account. A coach taps **Connect Stripe** in Settings. That money never passes through your account.
 
 ## Day-to-day admin
 

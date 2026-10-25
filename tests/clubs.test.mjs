@@ -212,11 +212,6 @@ test('club fees: a club connects its own Stripe account and parent payments go t
   const pay = await parent.post('/api/checkout/pass', { athleteId: kid.id });
   assert.equal(pay.status, 200, pay.text);
   const call = stripe.calls.findLast((c) => c.name === 'checkout.sessions.create');
-  assert.equal(call.args[1], undefined, 'taken on the platform account, so the platform pays the Stripe fee');
-  const pi = call.args[0].payment_intent_data;
-  assert.equal(pi.transfer_data.destination, 'acct_club', 'the full amount is passed on to the club');
-  assert.equal(pi.transfer_data.amount, undefined, 'nothing held back');
-  assert.equal(pi.application_fee_amount, undefined, 'no fee taken from the club');
-  assert.equal(pi.on_behalf_of, 'acct_club', "the club's name is on the parent's card statement");
+  assert.deepEqual(call.args[1], { stripeAccount: 'acct_club' }, "the parent's payment is created on the club's own account");
   assert.equal((await app.auth.getClub(clubId)).billing.connectAccountId, 'acct_club');
 });

@@ -269,28 +269,3 @@ test('people can change their email: password needed, new address confirms, old 
   assert.equal((await browser(app.base).post('/api/auth/login', { email: 'new@email.test', password: PASSWORD })).json.stage, 'full', 'signs in with the new email');
   assert.equal((await browser(app.base).post('/api/auth/login', { email: 'old@email.test', password: PASSWORD })).status, 401, 'not the old one');
 });
-
-test('parent payments taken on the platform account still update the right club, and only that club', async () => {
-  const clubA = await app.clubs.createClub({ name: 'Dest A', sport: 'Swimming', status: 'active' });
-  const clubB = await app.clubs.createClub({ name: 'Dest B', sport: 'Swimming', status: 'active' });
-  for (const [id, acct] of [[clubA, 'acct_da'], [clubB, 'acct_db']]) {
-    await app.query(`update app.clubs set billing = jsonb_build_object('connectAccountId', $2::text, 'connectChargesEnabled', true) where id = $1`, id, acct);
-  }
-  const coachB = await finishSetup((await app.auth.inviteUser({ clubId: clubB, email: 'coach@destb.test', role: 'coach' })).url, 'coach@destb.test');
-  const squad = (await coachB.post('/api/squads', squadBody(0))).json;
-  const kid = (await coachB.post('/api/athletes', { name: 'Dest Kid', squadId: squad.id })).json.athlete;
-  await app.query(`insert into app.billing (athlete_id, data) values ($1, '{"customerId":"cus_platform_kid","subscriptionId":"sub_k","status":"paid","frequency":"weekly","athleteName":"Dest Kid"}')`, kid.id);
-
-  // No Stripe account on the event: it happened on the platform's own account
-  await webhook({ type: 'invoice.payment_failed', data: { object: { customer: 'cus_platform_kid' } } }, 'signed-with:whsec_platform');
-  assert.equal((await app.one('select data from app.billing where athlete_id = $1', kid.id)).data.status, 'overdue');
-  await webhook({ type: 'invoice.paid', data: { object: { id: 'in_dest_1', customer: 'cus_platform_kid', amount_paid: 2550 } } }, 'signed-with:whsec_platform');
-  assert.equal((await app.one('select data from app.billing where athlete_id = $1', kid.id)).data.status, 'paid');
-  const income = await app.one("select club_id, data from app.transactions where ref = 'in_dest_1'");
-  assert.equal(income.club_id, clubB, 'income lands in club B\'s ledger');
-  assert.equal(income.data.amount, 25.5, 'the full amount the parent paid');
-
-  // A forged checkout naming club A but club B's child changes nothing
-  await webhook({ type: 'checkout.session.completed', data: { object: { id: 'cs_forged', metadata: { kind: 'pass', clubId: String(clubA), athleteId: String(kid.id) } } } }, 'signed-with:whsec_platform');
-  assert.equal((await app.one("select count(*)::int as n from app.transactions where ref = 'cs_forged'")).n, 0);
-});
