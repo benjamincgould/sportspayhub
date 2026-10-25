@@ -123,3 +123,54 @@ test('coaches can change a staff title; nobody else can, and parents have none',
   const { b: stranger } = await finishSetup((await app.auth.inviteUser({ clubId: other, email: 'x@other.test', role: 'coach' })).url, 'x@other.test');
   assert.equal((await stranger.put(`/api/users/${tessId}/title`, { title: 'Hacked' })).status, 404);
 });
+
+test('coaches change access between coach and treasurer, and delete people; a club always keeps a coach', async () => {
+  const team = (await coach.get('/api/users')).json;
+  const me = team.find((u) => u.email === 'coach@device.test');
+  const tess = team.find((u) => u.email === 'tess@device.test');
+  assert.equal((await coach.put(`/api/users/${me.id}/role`, { role: 'treasurer' })).status, 400, 'not your own access');
+  assert.equal((await coach.put(`/api/users/${tess.id}/role`, { role: 'parent' })).status, 400, 'coach or treasurer only');
+  const tessBrowser = browser(app.base);
+  // Tess is signed in somewhere; changing her access signs her out so it applies at once
+  const up = await coach.put(`/api/users/${tess.id}/role`, { role: 'coach' });
+  assert.equal(up.status, 200, up.text);
+  assert.equal(up.json.role, 'coach');
+  assert.equal((await app.one('select count(*)::int as n from app.sessions where user_id = $1', tess.id)).n, 0);
+  assert.equal((await coach.get('/api/users')).json.find((u) => u.id === tess.id).role, 'coach');
+  assert.equal((await coach.put(`/api/users/${tess.id}/role`, { role: 'treasurer' })).json.role, 'treasurer');
+  void tessBrowser;
+
+  // Delete straight away (no need to switch off first)
+  const sam = (await coach.get('/api/users')).json.find((u) => u.email === 'sam@device.test');
+  assert.equal((await coach.del(`/api/users/${sam.id}`)).status, 200);
+  assert.ok(!(await coach.get('/api/users')).json.some((u) => u.id === sam.id));
+});
+
+test('the owner sees a club\'s staff (never parents), and can change access, switch off and delete them', async () => {
+  const parentInvite = await coach.post('/api/users/invite', { email: 'parent@device.test', role: 'parent' });
+  assert.equal(parentInvite.status, 200, parentInvite.text);
+  const people = await owner.get(`/api/owner/clubs/${clubId}/people`);
+  assert.equal(people.status, 200, people.text);
+  assert.ok(people.json.every((u) => u.role === 'coach' || u.role === 'treasurer'), 'staff only');
+  assert.ok(!people.json.some((u) => u.email === 'parent@device.test'));
+  assert.equal((await coach.get(`/api/owner/clubs/${clubId}/people`)).status, 403, 'owner only');
+  const parentId = parentInvite.json.userId;
+  assert.equal((await owner.del(`/api/owner/clubs/${clubId}/people/${parentId}`)).status, 404, 'parents are the club\'s to manage');
+
+  const tess = people.json.find((u) => u.email === 'tess@device.test');
+  assert.equal((await owner.put(`/api/owner/clubs/${clubId}/people/${tess.id}/role`, { role: 'coach' })).json.role, 'coach');
+  assert.equal((await owner.put(`/api/owner/clubs/${clubId}/people/${tess.id}/title`, { title: 'Head Coach' })).json.title, 'Head Coach');
+  assert.equal((await owner.post(`/api/owner/clubs/${clubId}/people/${tess.id}/status`, { status: 'disabled' })).json.status, 'disabled');
+  assert.equal((await owner.post(`/api/owner/clubs/${clubId}/people/${tess.id}/status`, { status: 'active' })).json.status, 'active');
+  // Wrong club in the address: not found
+  const other = await app.clubs.createClub({ name: 'Third Club', sport: 'Netball', status: 'active' });
+  assert.equal((await owner.del(`/api/owner/clubs/${other}/people/${tess.id}`)).status, 404);
+
+  // The last coach can't be removed, demoted or switched off
+  const coaches = (await owner.get(`/api/owner/clubs/${clubId}/people`)).json.filter((u) => u.role === 'coach' && u.status !== 'disabled');
+  for (const c of coaches.slice(1)) assert.equal((await owner.del(`/api/owner/clubs/${clubId}/people/${c.id}`)).status, 200);
+  const last = coaches[0];
+  assert.equal((await owner.del(`/api/owner/clubs/${clubId}/people/${last.id}`)).status, 409);
+  assert.equal((await owner.put(`/api/owner/clubs/${clubId}/people/${last.id}/role`, { role: 'treasurer' })).status, 409);
+  assert.equal((await owner.post(`/api/owner/clubs/${clubId}/people/${last.id}/status`, { status: 'disabled' })).status, 409);
+});

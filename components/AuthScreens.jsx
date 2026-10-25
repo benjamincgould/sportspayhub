@@ -895,6 +895,14 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
     } catch (err) { showFlash(err.message); }
   };
 
+  const changeAccess = async (u, role) => {
+    try {
+      await api(`/api/users/${u.id}/role`, { method: 'PUT', body: { role } });
+      load();
+      showFlash(`${u.name || u.email} now has ${role} access. They'll sign in again to use it.`);
+    } catch (err) { showFlash(err.message); load(); }
+  };
+
   const saveTitle = async () => {
     try {
       await api(`/api/users/${retitling.id}/title`, { method: 'PUT', body: { title: retitling.title } });
@@ -1022,6 +1030,14 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
                 </div>
                 {statusChip(u)}
               </div>
+              {isCoach && role !== 'parent' && u.id !== me.id && (
+                <label className="flex items-center gap-2 text-[11px] text-slate-500">Access
+                  <select value={u.role} aria-label={`Access for ${u.email}`} onChange={(e) => changeAccess(u, e.target.value)} className="text-[11px] border border-slate-200 rounded-md px-1.5 py-1 bg-white">
+                    <option value="coach">Coach: everything, including medical</option>
+                    <option value="treasurer">Treasurer: payments, reports, contacts</option>
+                  </select>
+                </label>
+              )}
               <div className="flex flex-wrap gap-1.5">
                 {u.status !== 'disabled' && <button type="button" onClick={() => linkFor(u)} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">{u.status === 'invited' ? 'Re-send invite' : 'Email a password reset'}</button>}
                 {isCoach && role === 'parent' && <button type="button" onClick={() => { setRenaming(null); setLinking({ id: u.id, athleteIds: u.athleteIds }); }} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">Add or remove children</button>}
@@ -1037,7 +1053,7 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
                     {confirm === `status-${u.id}` ? 'Tap again to confirm' : u.status === 'disabled' ? 'Switch on' : 'Switch off'}
                   </button>
                 )}
-                {isCoach && u.id !== me.id && u.status !== 'active' && (
+                {isCoach && u.id !== me.id && (
                   <button type="button" onClick={() => twoTap(`delete-${u.id}`, () => api(`/api/users/${u.id}`, { method: 'DELETE' }).then(() => showFlash(u.status === 'invited' ? 'Invite cancelled' : 'Account deleted')))} className={`text-[11px] px-2 py-1 rounded-md font-medium ${confirm === `delete-${u.id}` ? 'bg-rose-600 text-white' : 'bg-slate-100 text-rose-700'}`}>
                     {confirm === `delete-${u.id}` ? 'Tap again: delete for good' : u.status === 'invited' ? 'Cancel invite' : 'Delete account'}
                   </button>

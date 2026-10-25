@@ -125,10 +125,11 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 - **Remember this device:** when entering the two-step code, staff can tick **Remember this device for 8 hours**. If they're signed out for being idle, they sign back in with just their password on that device. Signing out on purpose forgets it.
 - **Lost phone:** the person uses one of their recovery codes. That removes the old phone, and staff add their new phone straight away. Or a coach taps "Lost phone: reset 2-step".
 - **Forgotten password:** "Forgot password" on the sign-in page, or staff tap "Email a password reset". The link goes only to that person and works for 1 hour.
-- **Someone leaves:** "Switch off" signs them out everywhere. "Delete account" then removes them for good.
+- **Change someone's access:** coaches can switch staff between coach and treasurer (Team & Family Access → Access). They're signed out so it applies at once. A club always keeps at least one coach.
+- **Someone leaves:** "Switch off" signs them out everywhere. "Delete account" removes them for good (tap twice to confirm).
 - **A member leaves the club:** open them on the Athletes tab and tap the bin twice.
 
-**For you (Owner Console):** add a person to a club (**Add a person**: a treasurer or coach, with the title shown in the app, e.g. "Club Administrator"; coaches can change titles later in Team & Family Access), give free access, put a club back to normal, switch it off, set up a club for someone (with its own price and set-up fee), set a club's price, charge a club, or delete a club (type its name to confirm).
+**For you (Owner Console):** manage the people who run a club (**People**: change someone's access between coach and treasurer, edit their title, switch them off or delete them; parents stay the club's business) and add a person (**Add a person**: a treasurer or coach, with the title shown in the app, e.g. "Club Administrator"; coaches can change titles later in Team & Family Access), give free access, put a club back to normal, switch it off, set up a club for someone (with its own price and set-up fee), set a club's price, charge a club, or delete a club (type its name to confirm).
 
 ## Using it on a phone
 

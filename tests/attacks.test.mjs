@@ -133,16 +133,14 @@ test('M5: a coach can permanently delete a child; the treasurer and parents cann
   assert.equal((await app.one('select count(*)::int as n from app.attendance where athlete_id = $1', temp.id)).n, 0, 'their attendance goes too');
 });
 
-test('M5: a coach can delete a switched-off account; the owner can delete a whole club', async () => {
+test('M5: a coach can delete an account; the owner can delete a whole club', async () => {
   // An invite nobody has used can be cancelled straight away
   const unused = await coach.post('/api/users/invite', { email: 'never@atk.test', role: 'parent' });
   assert.equal((await coach.del(`/api/users/${unused.json.userId}`)).status, 200);
-  // An account someone uses must be switched off first
+  // An account someone uses can be deleted straight away too (the screen asks to confirm); they're signed out
   const inv = await coach.post('/api/users/invite', { email: 'gone@atk.test', role: 'parent', athleteIds: [otherKid.id] });
   const gone = await finishSetup(await emailedLink(app, 'gone@atk.test'), 'gone@atk.test');
-  assert.equal((await coach.del(`/api/users/${inv.json.userId}`)).status, 409, 'switch the account off first');
   assert.equal((await treasurer.del(`/api/users/${inv.json.userId}`)).status, 403);
-  await coach.post(`/api/users/${inv.json.userId}/status`, { status: 'disabled' });
   assert.equal((await coach.del(`/api/users/${inv.json.userId}`)).status, 200);
   assert.equal((await app.one("select count(*)::int as n from app.profiles where email = 'gone@atk.test'")).n, 0);
   assert.equal((await app.one("select count(*)::int as n from auth.users where email = 'gone@atk.test'")).n, 0, 'their Supabase sign-in account goes too');

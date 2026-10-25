@@ -24,7 +24,7 @@ const CHARGE_STATUS = { open: ['Waiting for payment', 'bg-amber-50 text-amber-70
 
 // Add someone to run a club: a treasurer (or another coach), with a title the owner can change
 const DEFAULT_TITLE = { treasurer: 'Treasurer', coach: 'Coach' };
-function AddClubMember({ club, onDone, showFlash }) {
+function AddClubMember({ club, onDone, onClose, showFlash }) {
   const [form, setForm] = useState({ role: 'treasurer', title: DEFAULT_TITLE.treasurer, name: '', email: '' });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -53,7 +53,10 @@ function AddClubMember({ club, onDone, showFlash }) {
             : `Email isn't set up, so send ${result.email} this link. It works once, for 3 days.`}
         </p>
         {result.inviteUrl && <code className="block p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{result.inviteUrl}</code>}
-        <button type="button" onClick={() => setResult(null)} className="font-semibold">Add another person</button>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => setResult(null)} className="font-semibold">Add another person</button>
+          <button type="button" onClick={onClose} className="font-semibold">Done</button>
+        </div>
       </div>
     );
   }
@@ -78,8 +81,83 @@ function AddClubMember({ club, onDone, showFlash }) {
         </label>
       </div>
       <p className="text-[11px] text-slate-500">They get an email to set their password, and set up two-step verification the first time they sign in. The club's coaches can change their title later.</p>
-      <button type="submit" disabled={busy} className={`w-full ${btn}`}>{busy ? 'Sending…' : 'Send invite'}</button>
+      <div className="flex gap-2">
+        <button type="submit" disabled={busy} className={`flex-1 ${btn}`}>{busy ? 'Sending…' : 'Send invite'}</button>
+        <button type="button" onClick={onClose} className="flex-1 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold">Cancel</button>
+      </div>
     </form>
+  );
+}
+
+// A club's staff (coaches and treasurers; parents and members are the club's own business):
+// change access or title, switch off, delete, or add someone
+function ClubPeople({ club, onChanged, showFlash }) {
+  const [people, setPeople] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [retitling, setRetitling] = useState(null); // { id, title }
+  const base = `/api/owner/clubs/${club.id}/people`;
+  const load = async () => {
+    try { setPeople(await api(base)); } catch (err) { showFlash(err.message); }
+  };
+  useEffect(() => { load(); }, [club.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const act = async (fn, done) => {
+    try { await fn(); showFlash(done); } catch (err) { showFlash(err.message); }
+    setConfirm('');
+    load();
+    onChanged();
+  };
+  const twoTap = (key, fn, done) => (confirm === key ? act(fn, done) : setConfirm(key));
+  const who = (u) => u.name || u.email;
+
+  return (
+    <div className="p-3 bg-slate-50 rounded-lg space-y-2">
+      <div className="flex justify-between items-center">
+        <p className="text-xs font-semibold text-slate-700">People who run {club.name}</p>
+        {!adding && <button type="button" onClick={() => setAdding(true)} className="text-[11px] bg-slate-900 text-white px-2 py-1 rounded-md font-medium flex items-center gap-1"><UserPlus size={11} /> Add a person</button>}
+      </div>
+      {adding && <AddClubMember club={club} onDone={() => { load(); onChanged(); }} onClose={() => setAdding(false)} showFlash={showFlash} />}
+      {!people && <p className="text-xs text-slate-400">Loading…</p>}
+      {people && people.length === 0 && <p className="text-xs text-slate-400">No coaches or treasurers yet.</p>}
+      {people && people.map((u) => (
+        <div key={u.id} className="py-2 border-t border-slate-200 space-y-1.5">
+          <div className="flex justify-between items-start gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{who(u)}</p>
+              <p className="text-xs text-indigo-700">{u.title || (u.role === 'coach' ? 'Coach' : 'Treasurer')}</p>
+              <p className="text-[11px] text-slate-400 truncate">{u.email} · {u.lastLoginAt ? `last signed in ${new Date(u.lastLoginAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}` : 'never signed in'}</p>
+            </div>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${u.status === 'active' ? 'bg-emerald-50 text-emerald-700' : u.status === 'invited' ? 'bg-amber-50 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+              {u.status === 'active' ? 'Active' : u.status === 'invited' ? 'Invited' : 'Switched off'}
+            </span>
+          </div>
+          <label className="flex items-center gap-2 text-[11px] text-slate-500">Access
+            <select value={u.role} aria-label={`Access for ${u.email}`} onChange={(e) => { const role = e.target.value; act(() => api(`${base}/${u.id}/role`, { method: 'PUT', body: { role } }), `${who(u)} now has ${role} access`); }} className="text-[11px] border border-slate-200 rounded-md px-1.5 py-1 bg-white">
+              <option value="coach">Coach: everything, including medical</option>
+              <option value="treasurer">Treasurer: payments, reports, contacts</option>
+            </select>
+          </label>
+          {retitling?.id === u.id ? (
+            <div className="flex gap-2">
+              <input value={retitling.title} maxLength={60} onChange={(e) => setRetitling({ ...retitling, title: e.target.value })} placeholder={u.role === 'coach' ? 'Coach' : 'Treasurer'} aria-label={`Title for ${u.email}`} className={`${field} mt-0 flex-1`} />
+              <button type="button" onClick={() => { const title = retitling.title; setRetitling(null); act(() => api(`${base}/${u.id}/title`, { method: 'PUT', body: { title } }), 'Title updated'); }} className="px-3 bg-slate-900 text-white rounded-lg text-xs font-semibold">Save</button>
+              <button type="button" onClick={() => setRetitling(null)} className="px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold">Cancel</button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={() => setRetitling({ id: u.id, title: u.title || '' })} className="text-[11px] bg-white border border-slate-200 text-slate-700 px-2 py-1 rounded-md font-medium">Edit title</button>
+              <button type="button" onClick={() => twoTap(`status-${u.id}`, () => api(`${base}/${u.id}/status`, { method: 'POST', body: { status: u.status === 'disabled' ? 'active' : 'disabled' } }), u.status === 'disabled' ? 'Switched back on' : 'Switched off and signed out')} className={`text-[11px] px-2 py-1 rounded-md font-medium ${confirm === `status-${u.id}` ? 'bg-rose-600 text-white' : 'bg-white border border-slate-200 text-rose-700'}`}>
+                {confirm === `status-${u.id}` ? 'Tap again to confirm' : u.status === 'disabled' ? 'Switch on' : 'Switch off'}
+              </button>
+              <button type="button" onClick={() => twoTap(`delete-${u.id}`, () => api(`${base}/${u.id}`, { method: 'DELETE' }), `${who(u)} deleted`)} className={`text-[11px] px-2 py-1 rounded-md font-medium ${confirm === `delete-${u.id}` ? 'bg-rose-600 text-white' : 'bg-white border border-slate-200 text-rose-700'}`}>
+                {confirm === `delete-${u.id}` ? 'Tap again: delete for good' : u.status === 'invited' ? 'Cancel invite' : 'Delete'}
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      <p className="text-[11px] text-slate-400">Changing access signs them out, so the new access applies straight away. A club always keeps at least one coach. Parents are managed by the club's coaches.</p>
+    </div>
   );
 }
 
@@ -422,7 +500,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button type="button" onClick={() => setBillingFor(billingFor === c.id ? null : c.id)} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${billingFor === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}><CreditCard size={11} /> Price & charges</button>
-                    <button type="button" onClick={() => setAddingTo(addingTo === c.id ? null : c.id)} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${addingTo === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}><UserPlus size={11} /> Add a person</button>
+                    <button type="button" onClick={() => setAddingTo(addingTo === c.id ? null : c.id)} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${addingTo === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}><UserPlus size={11} /> People</button>
                     {c.status !== 'comped' && <button type="button" onClick={() => setAccess(c, 'free')} className="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md font-medium flex items-center gap-1"><Gift size={11} /> Give free access</button>}
                     {['comped', 'suspended'].includes(c.status) && (
                       <button type="button" onClick={() => setAccess(c, 'normal')} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${confirm === `normal-${c.id}` ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}>
@@ -436,7 +514,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                       </button>
                     )}
                   </div>
-                  {addingTo === c.id && <AddClubMember club={c} onDone={load} showFlash={showFlash} />}
+                  {addingTo === c.id && <ClubPeople club={c} onChanged={load} showFlash={showFlash} />}
                   {billingFor === c.id && <ClubBilling club={c} defaults={{ priceNzd: data.priceNzd, setupFeeNzd: data.setupFeeNzd, stripe: data.stripe, payMethods: data.payMethods }} onChanged={load} showFlash={showFlash} />}
                   {deleting && deleting.id === c.id && (
                     <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg space-y-2">

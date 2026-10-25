@@ -138,7 +138,9 @@ try {
   step('Owner sets the club\'s own monthly price and sends a $120 payment request; the coach is emailed');
 
   // ---------- The owner adds a treasurer, with their own title ----------
-  await clubCard.getByRole('button', { name: 'Add a person' }).click();
+  await clubCard.getByRole('button', { name: 'People' }).click();
+  await ownerPage.getByText('People who run Riverside Rugby').waitFor();
+  await ownerPage.getByRole('button', { name: 'Add a person' }).click();
   if (await ownerPage.getByLabel('Title').inputValue() !== 'Treasurer') fail('the title should start as Treasurer');
   await ownerPage.getByLabel('Title').fill('Club Administrator');
   await ownerPage.getByLabel('Their name').fill('Tess Ngata');
@@ -172,6 +174,17 @@ try {
   await tess.getByText(/Club Administrator · Tess Ngata/i).waitFor();
   if (await tess.getByText('Enter your code').count()) fail('a remembered device should not be asked for a code');
   step('Ticking "Remember this device for 8 hours": after going idle, she signs in with just her password');
+
+  // ---------- The owner changes her access ----------
+  await ownerPage.getByRole('button', { name: 'Done' }).click();
+  await ownerPage.getByLabel('Access for tess@riverside.test').selectOption('coach');
+  await ownerPage.getByText('Tess Ngata now has coach access').waitFor();
+  await tess.reload();
+  await tess.locator('#login-email').waitFor();
+  await ownerPage.getByLabel('Access for tess@riverside.test').selectOption('treasurer');
+  await ownerPage.getByText('Tess Ngata now has treasurer access').waitFor();
+  if (await ownerPage.getByText('Mere Fox').count()) fail('the owner must not see parents');
+  step('The owner changes her access from the club\'s People list; she is signed out so it applies at once');
 
   await coach.reload();
   await coach.getByRole('button', { name: 'Grades', exact: true }).click();
