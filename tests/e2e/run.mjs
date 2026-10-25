@@ -196,22 +196,37 @@ try {
   ownerPage.on('request', (r) => { if (r.url().includes('/api/')) apiCalls.push(r.url()); });
   await ownerPage.getByRole('button', { name: 'Open the demo' }).click();
   await ownerPage.getByText('Hilltop Netball').first().waitFor();
-  await ownerPage.getByRole('button', { name: 'coach', exact: true }).click();
+  await ownerPage.screenshot({ path: `${here}/demo-start.png` });
+  await ownerPage.getByRole('button', { name: 'See the Coach view' }).click();
   await ownerPage.getByRole('button', { name: 'Teams' }).first().waitFor();
   await ownerPage.getByRole('button', { name: 'Players', exact: true }).first().click();
   await ownerPage.getByText('Leo Parker').first().waitFor();
   await ownerPage.screenshot({ path: `${here}/owner-demo.png` });
+  // Treasurer: payments, with the club set to card and bank; she moves the Parker family to bank
+  await ownerPage.getByRole('button', { name: 'Treasurer', exact: true }).click();
+  await ownerPage.getByText('Payment Reconciliation').waitFor();
+  await ownerPage.getByLabel('Parker family: how they pay').selectOption('bank');
+  await ownerPage.getByText('Parker family now pays by bank transfer').waitFor();
+  await ownerPage.getByRole('button', { name: 'Settings' }).first().click();
+  await ownerPage.getByText('How Parents Pay').waitFor();
+  await ownerPage.getByText('Team & Family Access').waitFor();
+  // Parent: the same family now sees the bank details
+  await ownerPage.getByRole('button', { name: 'Parent', exact: true }).click();
+  await ownerPage.getByText(/Welcome, Sarah/).waitFor();
+  await ownerPage.getByRole('button', { name: 'Payments' }).first().click();
+  await ownerPage.getByRole('heading', { name: 'Pay by bank transfer' }).waitFor();
+  await ownerPage.screenshot({ path: `${here}/demo-parent.png` });
   if (apiCalls.length) fail(`the demo must not talk to the server: ${apiCalls.join(', ')}`);
   await ownerPage.getByRole('button', { name: 'Exit demo' }).click();
   await ownerPage.getByText('Owner Console').waitFor();
   await ownerPage.getByRole('button', { name: 'Clubs', exact: true }).click();
-  step('The owner opens a demo dressed as "Hilltop Netball" (teams, players, teal), shows each view, and exits');
+  step('The owner opens a demo as "Hilltop Netball": picks the coach view, then the treasurer (moves a family to bank) and the parent (sees the bank details), and exits');
 
   const prospect = await (await browser.newContext()).newPage();
   watch(prospect, 'prospect');
   await prospect.goto(shared);
   await prospect.getByText('Hilltop Netball').first().waitFor();
-  await prospect.getByRole('button', { name: 'parent', exact: true }).click();
+  await prospect.getByRole('button', { name: 'See the Parent view' }).click();
   await prospect.getByText(/Welcome, Sarah/).waitFor();
   step('The shared demo link opens the same pretend club for a prospect, without signing in');
 

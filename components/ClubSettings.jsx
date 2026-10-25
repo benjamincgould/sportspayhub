@@ -254,7 +254,7 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
 
 // ---------- How parents pay the club (coach and treasurer) ----------
 
-export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
+export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false }) {
   const p = club.payments || {};
   const [form, setForm] = useState({
     card: p.card !== false, bank: Boolean(p.bank), defaultMethod: p.defaultMethod === 'card' ? 'card' : 'bank',
@@ -264,6 +264,12 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
 
   const save = async (e) => {
     e.preventDefault();
+    if (demo) { // the sales demo: change the pretend club only, nothing is sent
+      const bank = form.bank ? { accountName: form.bankAccountName || `${club.name} Inc`, accountNumber: form.bankAccountNumber || '12-3456-0123456-00', instructions: form.instructions } : null;
+      onClubChange({ ...club, payments: { ...club.payments, card: form.card, bank, defaultMethod: form.defaultMethod } });
+      showFlash('Payment options saved (demo)');
+      return;
+    }
     setSaving(true);
     try {
       const res = await api('/api/club/payment-methods', { method: 'PUT', body: form });

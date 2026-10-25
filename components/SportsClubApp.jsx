@@ -270,6 +270,15 @@ const DEMO_CLUB = {
 };
 
 const DEMO_PARENT_ATHLETE_ID = 1; // demo: the parent's athlete
+// Demo: the three sides of the app, as introduced on the demo's start screen
+const DEMO_VIEWS = [
+  ['coach', 'Coach', 'Runs the club: everything the treasurer sees, plus attendance, timetables and medical details.',
+    (W) => ['Mark attendance at training', `Set up ${W.groups.toLowerCase()}, times and prices`, `${W.members}' records, including medical`, 'Invite parents and staff']],
+  ['treasurer', 'Treasurer', 'Looks after the money: who has paid, bank transfers, reminders and GST reports.',
+    (W) => ['See who is paid up or overdue', 'Tick off bank transfers as they arrive', 'Offer session passes', 'GST and financial reports']],
+  ['parent', 'Parent', 'What families see on their phone: just their own children.',
+    () => ['All their children on one page', 'Choose training days', 'One family payment, by card or bank', "Update their child's medical details"]],
+];
 // Demo mode only: fictional athletes. regularSessions = series ids they normally attend.
 const DEMO_ATHLETES = [
   { id: 1, name: 'Leo Parker', squadId: 1, frequency: 'weekly', status: 'paid', parent: 'Sarah Parker', phone: '021 000 0001', email: 'sarah.parker@example.com', address: '12 Example Street, Hamilton 3200', allergies: 'None', medication: 'None', emergency: 'Mike Parker (021 000 0011)', cardLast4: '4242', autoDebit: true, hasSubscription: true, nextBillingDate: '2026-10-26', regularSessions: ['dev-mon', 'dev-sat'] },
@@ -409,6 +418,14 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [recording, setRecording] = useState(null); // { id, amount } while recording a family's bank payment
   const [familiesState, setFamilies] = useState([]);
+  // Demo only: how the pretend club takes payments (card and bank, so every screen can be shown),
+  // which families the club has set to bank or card, and the "choose a view" start screen
+  const [demoPayments, setDemoPayments] = useState(() => ({
+    connected: true, started: true, card: true, defaultMethod: 'card',
+    bank: { accountName: `${club.name} Inc`, accountNumber: '12-3456-0123456-00', instructions: '' },
+  }));
+  const [demoMethods, setDemoMethods] = useState({}); // family id -> 'card' | 'bank'
+  const [demoIntro, setDemoIntro] = useState(!remote);
   const [passes, setPasses] = useState(remote ? [] : DEMO_PASSES);
   const flashTimer = useRef(null);
   const [passForm, setPassForm] = useState(null);     // a new pass: { athleteId, sessions, price, paidBy ('offer' = parents buy it), forFamily }
@@ -423,6 +440,13 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   // Families: brothers and sisters share one schedule, one way of paying (set by the club), one
   // status, one bank reference and one total. (The demo treats each child as their own family.)
   const surnameOf = (n) => String(n || '').trim().split(/\s+/).pop() || '';
+  // Demo: card families stay on card; families without a card subscription pay by bank (if offered)
+  const demoMethodFor = (familyId, a) => {
+    const chosen = demoMethods[familyId] || (a.hasSubscription ? 'card' : 'bank');
+    if (chosen === 'bank' && !demoPayments.bank) return 'card';
+    if (chosen === 'card' && !demoPayments.card) return 'bank';
+    return chosen;
+  };
   // Demo mode: children with the same parent make one family
   const demoFamilies = () => {
     const groups = new Map();
@@ -433,12 +457,14 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     }
     return [...groups.values()].map((kids) => {
       const a = kids[0];
+      const payMethod = demoMethodFor(a.id, a);
+      const onCard = payMethod === 'card' && Boolean(a.hasSubscription);
       return {
         id: a.id, name: `${surnameOf(a.name)} family`, reference: `${surnameOf(a.name).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 9)}F${a.id}`,
         athleteIds: kids.map((k) => k.id), frequency: a.frequency,
         total: kids.reduce((sum, k) => sum + Number(squadById(k.squadId)?.[a.frequency] || 0), 0),
-        payMethod: 'card', payMethodChosen: true, status: kids.some((k) => k.status === 'overdue') ? 'overdue' : 'paid',
-        hasSubscription: Boolean(a.hasSubscription), cardLast4: a.cardLast4, nextBillingDate: a.nextBillingDate, cardStopping: false, lastPaidOn: a.lastPaidOn || null,
+        payMethod, payMethodChosen: true, status: kids.some((k) => k.status === 'overdue') ? 'overdue' : 'paid',
+        hasSubscription: onCard, cardLast4: a.cardLast4, nextBillingDate: onCard ? a.nextBillingDate : null, cardStopping: false, lastPaidOn: a.lastPaidOn || null,
       };
     });
   };
@@ -1248,8 +1274,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // How this club takes payments (card, bank or both; the demo shows card). The club decides each
   // family's way of paying; parents only see the one for their family.
-  const cardOn = !remote || club.payments?.card !== false;
-  const bankDetails = remote ? club.payments?.bank || null : null;
+  const cardOn = remote ? club.payments?.card !== false : demoPayments.card;
+  const bankDetails = remote ? club.payments?.bank || null : demoPayments.bank;
   const bothOffered = cardOn && Boolean(bankDetails);
 
   const renderFamilyPayment = (f) => {
@@ -1259,7 +1285,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     const totalAt = (freq) => kids.reduce((sum, k) => sum + Number(squadById(k.squadId)?.[freq] || 0), 0);
     return (
       <div key={f.id} className="space-y-4">
-        <div className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white p-4 rounded-xl shadow-md">
+        <div className="bg-gradient-to-r from-indigo-500 to-indigo-700 text-white p-4 rounded-xl shadow-md">
           <p className="text-xs text-indigo-100">{f.name} · {kids.length} {kids.length === 1 ? lc(W.member) : lc(W.members)}</p>
           <p className="text-lg font-bold">{money(f.total)} {FREQ_TITLE[f.frequency].toLowerCase()}</p>
           <p className="text-xs mt-2 text-indigo-100">{howPaid(f)}{f.nextBillingDate ? ` · next payment ${fmtShort(f.nextBillingDate)}` : ''}</p>
@@ -1492,7 +1518,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // The club decides how each family pays (only when it offers both card and bank)
   const changeFamilyMethod = async (f, method) => {
-    if (!remote || method === f.payMethod) return;
+    if (method === f.payMethod) return;
+    if (!remote) { setDemoMethods((prev) => ({ ...prev, [f.id]: method })); showFlash(`${f.name} now pays by ${method === 'bank' ? 'bank transfer' : 'card'}`); return; }
     setBusy(`method-${f.id}`);
     try {
       const res = await api(`/api/families/${f.id}/pay-method`, { method: 'PUT', body: { method } });
@@ -1549,7 +1576,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-1.5">
-              {remote && bothOffered && (
+              {bothOffered && (
                 <label className="text-xs text-slate-500 flex items-center gap-1">
                   Pays by
                   <select aria-label={`${f.name}: how they pay`} value={f.payMethod} disabled={busy === `method-${f.id}`} onChange={(e) => changeFamilyMethod(f, e.target.value)} className="text-xs border border-slate-200 rounded px-1.5 py-1 bg-white">
@@ -2125,17 +2152,63 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   );
 
   // How parents pay the club (coach and treasurer)
-  const renderPaymentMethods = () => remote && (
-    <PaymentMethodsCard club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} />
-  );
+  const renderPaymentMethods = () => (remote
+    ? <PaymentMethodsCard club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} />
+    : <PaymentMethodsCard demo club={{ ...club, payments: demoPayments }} showFlash={showFlash} onClubChange={(c) => setDemoPayments(c.payments)} />);
 
   // Server mode: account security for everyone, plus team & family access for staff
-  const renderAccount = () => remote && (
-    <AccountSecurity user={me} onUserChange={(u) => updateUser?.(u)} signOut={signOut} showFlash={showFlash} />
-  );
-  const renderTeamAccess = () => remote && (
-    <TeamAccess me={me} athletes={athletes} words={W} showFlash={showFlash} inviteRequest={inviteRequest} onInviteHandled={() => setInviteRequest(null)} />
-  );
+  const renderAccount = () => (remote
+    ? <AccountSecurity user={me} onUserChange={(u) => updateUser?.(u)} signOut={signOut} showFlash={showFlash} />
+    : (
+      <div className={`${card} space-y-1 text-sm`}>
+        <h3 className="font-semibold text-sm flex items-center gap-1.5"><Shield size={14} /> Your Account</h3>
+        <p className="text-xs text-slate-500">Each person changes their own password and email here. {currentRole === 'parent' ? 'Parents can turn on two-step verification.' : 'Staff always use two-step verification (an authenticator app code), and can tick "remember this device for 8 hours".'}</p>
+      </div>
+    ));
+  const renderTeamAccess = () => (remote
+    ? <TeamAccess me={me} athletes={athletes} words={W} showFlash={showFlash} inviteRequest={inviteRequest} onInviteHandled={() => setInviteRequest(null)} />
+    : renderDemoTeam());
+
+  // Demo: who can sign in to the pretend club (sample people; invites aren't sent)
+  const renderDemoTeam = () => {
+    const parents = [...new Map(athletes.filter((a) => a.parent).map((a) => [a.parent, athletes.filter((x) => x.parent === a.parent)])).entries()];
+    const staff = [['Dana Fox', 'Head Coach', 'coach'], ['Sam Lee', 'Club Administrator', 'treasurer']];
+    const isCoachView = currentRole === 'coach';
+    return (
+      <div className={`${card} space-y-2`}>
+        <div className="flex justify-between items-center">
+          <h3 className="font-semibold text-sm flex items-center gap-1.5"><Users size={14} /> Team & Family Access</h3>
+          {isCoachView && <button onClick={() => showFlash('In the real app this emails them an invite. Nothing is sent from the demo.')} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1"><Mail size={12} /> Invite</button>}
+        </div>
+        <p className="text-xs text-slate-500">{isCoachView ? 'Coaches invite parents, the treasurer and other coaches. Parents only ever see their own children.' : 'The treasurer can help families with their accounts; coaches manage staff.'}</p>
+        {isCoachView && (
+          <>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-1">Coaches & Treasurers · {staff.length}</p>
+            {staff.map(([name, title, role]) => (
+              <div key={name} className="py-2 border-t border-slate-50 flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-sm">{name}</p>
+                  <p className="text-xs text-indigo-700 font-medium">{title}</p>
+                  <p className="text-[11px] text-slate-400">{role === 'coach' ? 'Coach: everything, including medical' : 'Treasurer: payments, reports, contacts'} · 2-step on</p>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 shrink-0">Active</span>
+              </div>
+            ))}
+          </>
+        )}
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-1">Families · {parents.length}</p>
+        {parents.map(([parent, kids]) => (
+          <div key={parent} className="py-2 border-t border-slate-50 flex justify-between items-start gap-2">
+            <div className="min-w-0">
+              <p className="font-medium text-sm">{parent}</p>
+              <p className="text-xs text-slate-500">{kids.length === 1 ? 'Child' : `${kids.length} children`}: {kids.map((k) => k.name).join(', ')}</p>
+            </div>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 shrink-0">Active</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // ----- Coach -----
   const renderCoachHome = () => (
@@ -2524,8 +2597,9 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     <div className="space-y-4">
       <h2 className="font-bold text-base">Settings</h2>
       {!remote && (
-        <div className={`${card} text-sm`}>
-          <p className="text-slate-600 text-xs">Coaches have full access: every screen, including medical details.</p>
+        <div className={`${card} text-sm space-y-1`}>
+          <h3 className="font-semibold text-sm">Club Branding & Subscription</h3>
+          <p className="text-slate-600 text-xs">Here the coach sets the club's name, logo and colour, what it calls its {lc(W.groups)} and {lc(W.members)}, connects the club's own Stripe account for card payments, and manages the club's subscription to the app.</p>
         </div>
       )}
       {remote && <ClubSettings club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} onRefresh={loadFromServer} />}
@@ -2571,15 +2645,41 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   };
 
   // ---------- Render ----------
+  // Demo: choose which side of the app to look at first
+  if (!remote && demoIntro) {
+    return (
+      <div className="min-h-[100dvh] w-full bg-slate-50 text-slate-800 font-sans overflow-y-auto">
+        <div className="bg-indigo-600 text-white px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-6">
+          <div className="max-w-3xl mx-auto">
+            <p className="text-xs uppercase tracking-wider text-indigo-200 font-semibold">Demo</p>
+            <h1 className="text-2xl font-bold">{club.name}</h1>
+            <p className="text-sm text-indigo-100 mt-1">A pretend club with sample {lc(W.members)}, {lc(W.groups)}, bookings and payments. Each person sees their own side of the app. Pick one to start; you can switch any time from the bar at the top.</p>
+          </div>
+        </div>
+        <div className="max-w-3xl mx-auto p-4 md:p-6 grid gap-3 md:grid-cols-3">
+          {DEMO_VIEWS.map(([r, label, blurb, points]) => (
+            <button key={r} onClick={() => { switchRole(r); setDemoIntro(false); }} className={`${card} text-left space-y-2 hover:ring-2 hover:ring-indigo-300`} aria-label={`See the ${label} view`}>
+              <p className="font-bold text-base text-indigo-700">{label}</p>
+              <p className="text-xs text-slate-600">{blurb}</p>
+              <ul className="text-xs text-slate-500 space-y-0.5 list-disc pl-4">{points(W).map((x) => <li key={x}>{x}</li>)}</ul>
+              <p className="text-xs font-semibold text-indigo-700 pt-1">See the {lc(label)} view →</p>
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400 text-center px-4 pb-6">Nothing in the demo is saved, no emails are sent and no payments are taken.{onExitDemo ? ' ' : ''}{onExitDemo && <button onClick={onExitDemo} className="underline">Exit demo</button>}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex flex-col h-[100dvh] w-full bg-slate-50 text-slate-800 font-sans overflow-hidden">
 
       {/* DEMO ROLE SWITCHER BAR (demo mode only) */}
-      {!remote && <div className="bg-slate-900 text-white p-2 text-xs flex justify-between items-center px-4">
-        <span className="font-semibold flex items-center gap-1"><Shield size={14} /> Demo<span className="hidden sm:inline"> · try each view</span>:</span>
+      {!remote && <div className="bg-slate-900 text-white p-2 text-xs flex justify-between items-center gap-2 px-4">
+        <span className="font-semibold flex items-center gap-1 shrink-0"><Shield size={14} /> <span>Demo<span className="hidden sm:inline"> · viewing as</span>:</span></span>
         <div className="flex gap-1 items-center">
-          {['parent', 'treasurer', 'coach'].map((r) => (
-            <button key={r} onClick={() => switchRole(r)} className={`px-2 py-1 rounded capitalize ${currentRole === r ? 'bg-indigo-600' : 'bg-slate-700'}`}>{r}</button>
+          {DEMO_VIEWS.map(([r, label]) => (
+            <button key={r} onClick={() => switchRole(r)} aria-pressed={currentRole === r} className={`px-2.5 py-1 rounded font-semibold ${currentRole === r ? 'bg-indigo-600' : 'bg-slate-700'}`}>{label}</button>
           ))}
           {onExitDemo && <button onClick={onExitDemo} className="ml-2 px-2 py-1 rounded bg-white text-slate-900 font-semibold">Exit demo</button>}
         </div>
