@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Shield, LogOut, Plus, Gift, Ban, RotateCcw, Copy, Check, Search, CreditCard, ExternalLink, UserPlus } from './icons';
 import { api } from './api';
 import { AccountSecurity } from './AuthScreens';
+import SportsClubApp from './SportsClubApp';
+import { BRAND_COLOURS, applyBrandColour } from './brand';
+import { DEMO_SPORTS, demoClubFrom, demoLink } from './demo';
 
 // The platform owner's screen: every club, its subscription, free access and switching clubs off.
 // It deliberately shows no member names, contact details or medical information.
@@ -86,6 +89,51 @@ function AddClubMember({ club, onDone, onClose, showFlash }) {
         <button type="button" onClick={onClose} className="flex-1 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold">Cancel</button>
       </div>
     </form>
+  );
+}
+
+// The sales demo: dress the sample club in a prospect's name, sport and colour, then show it here
+// or send them a link. Nothing in the demo is saved or sent anywhere.
+function DemoSetup({ onOpen, showFlash }) {
+  const [form, setForm] = useState({ name: '', sport: 'Swimming', colour: 'indigo' });
+  const [copied, setCopied] = useState(false);
+  const link = demoLink(window.location.origin, form);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); setCopied(true); showFlash('Demo link copied'); } catch { showFlash('Select the link and copy it'); }
+  };
+  return (
+    <div className={`${card} space-y-3`}>
+      <div>
+        <h2 className="font-semibold text-sm">Demo club</h2>
+        <p className="text-xs text-slate-500">Show a club what the app looks like before they sign up. It's a pretend club with sample members, groups, bookings and payments, and you can switch between the parent, treasurer and coach views. Nothing is saved, no emails are sent and no real payments are taken; it starts fresh each time.</p>
+      </div>
+      <label className="block text-xs text-slate-500">Their club's name (optional)
+        <input maxLength={60} value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); setCopied(false); }} placeholder="e.g. Riverside Rugby Club" className={field} aria-label="Demo club name" />
+      </label>
+      <label className="block text-xs text-slate-500">Sport
+        <select value={form.sport} onChange={(e) => { setForm({ ...form, sport: e.target.value }); setCopied(false); }} className={field} aria-label="Demo sport">
+          {DEMO_SPORTS.map((s) => <option key={s}>{s}</option>)}
+        </select>
+      </label>
+      <div className="text-xs text-slate-500">Colour
+        <div className="flex flex-wrap gap-2 mt-1">
+          {BRAND_COLOURS.map((c) => (
+            <button key={c.name} type="button" onClick={() => { setForm({ ...form, colour: c.name }); setCopied(false); }} aria-label={`Colour ${c.label}`} title={c.label}
+              className={`w-7 h-7 rounded-full border-2 ${form.colour === c.name ? 'border-slate-900' : 'border-white'}`} style={{ background: c.swatch }} />
+          ))}
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-400">They'll see it as a {form.sport.toLowerCase()} club, using words like "{demoClubFrom(form).branding.group}" and "{demoClubFrom(form).branding.member}".</p>
+      <button type="button" onClick={() => onOpen(demoClubFrom(form))} className={`w-full ${btn} py-2.5`}>Open the demo</button>
+      <div className="pt-2 border-t border-slate-100 space-y-1.5">
+        <p className="text-xs font-semibold text-slate-700">Or send them a link to try it themselves</p>
+        <p className="text-[11px] text-slate-500">Anyone with the link can open the demo without signing in. It only ever shows the sample club.</p>
+        <div className="flex gap-2 items-center">
+          <code className="flex-1 p-2 bg-slate-50 rounded border border-slate-200 break-all select-all font-mono text-[11px]">{link}</code>
+          <button type="button" onClick={copy} className="p-2 bg-white rounded border border-slate-200" aria-label="Copy demo link">{copied ? <Check size={14} /> : <Copy size={14} />}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -358,6 +406,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
   const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState('clubs');
+  const [demo, setDemo] = useState(null); // the demo club being shown
   const [deleting, setDeleting] = useState(null); // { id, name, typed }
   const [billingFor, setBillingFor] = useState(null); // club id
   const [addingTo, setAddingTo] = useState(null);     // club id: adding a person
@@ -401,6 +450,10 @@ export function OwnerConsole({ user, signOut, updateUser }) {
   const monthly = (data?.clubs || []).filter((c) => ['active', 'past_due'].includes(c.status)).reduce((sum, c) => sum + (c.pricing?.monthlyPriceNzd || 0), 0);
   const owed = (data?.clubs || []).reduce((sum, c) => sum + (c.openChargesNzd || 0), 0);
 
+  if (demo) {
+    return <SportsClubApp key={JSON.stringify(demo)} mode="demo" demoClub={demo} onExitDemo={() => { applyBrandColour('indigo'); setDemo(null); }} />;
+  }
+
   return (
     <div className="relative flex flex-col h-[100dvh] w-full bg-slate-50 text-slate-800 font-sans overflow-hidden">
       <header className="bg-slate-900 text-white px-5 md:px-8 pb-4 pt-[max(1rem,env(safe-area-inset-top))] flex justify-between items-center">
@@ -414,7 +467,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
 
       <div className="border-b border-slate-200 bg-white md:px-8">
         <div className="flex max-w-3xl mx-auto">
-          {[['clubs', 'Clubs'], ['payments', 'Payment details'], ['account', 'My account']].map(([k, label]) => (
+          {[['clubs', 'Clubs'], ['demo', 'Demo'], ['payments', 'Payment details'], ['account', 'My account']].map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)} className={`flex-1 md:flex-none md:px-6 py-2.5 text-sm font-medium ${tab === k ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-500'}`}>{label}</button>
           ))}
         </div>
@@ -424,6 +477,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
         <div className="max-w-3xl mx-auto space-y-3">
         {tab === 'account' && <AccountSecurity user={user} onUserChange={updateUser} signOut={signOut} showFlash={showFlash} />}
         {tab === 'payments' && <PaymentDetails showFlash={showFlash} onSaved={load} />}
+        {tab === 'demo' && <DemoSetup onOpen={setDemo} showFlash={showFlash} />}
 
         {tab === 'clubs' && (
           <>

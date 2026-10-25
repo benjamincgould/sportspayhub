@@ -129,6 +129,8 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 - **Someone leaves:** "Switch off" signs them out everywhere. "Delete account" removes them for good (tap twice to confirm).
 - **A member leaves the club:** open them on the Athletes tab and tap the bin twice.
 
+**Showing the app to a club (Owner Console → Demo):** type their club's name, pick their sport and colour, and tap **Open the demo**: a pretend club with sample members, groups, bookings and payments, where you can switch between the parent, treasurer and coach views. Or copy the demo link and send it, so they can try it without signing in. Nothing in the demo is saved or sent anywhere, and it starts fresh each time.
+
 **For you (Owner Console):** manage the people who run a club (**People**: change someone's access between coach and treasurer, edit their title, switch them off or delete them; parents stay the club's business) and add a person (**Add a person**: a treasurer or coach, with the title shown in the app, e.g. "Club Administrator"; coaches can change titles later in Team & Family Access), give free access, put a club back to normal, switch it off, set up a club for someone (with its own price and set-up fee), set a club's price, charge a club, or delete a club (type its name to confirm).
 
 ## Using it on a phone

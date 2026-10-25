@@ -186,6 +186,35 @@ try {
   if (await ownerPage.getByText('Mere Fox').count()) fail('the owner must not see parents');
   step('The owner changes her access from the club\'s People list; she is signed out so it applies at once');
 
+  // ---------- The sales demo ----------
+  await ownerPage.getByRole('button', { name: 'Demo', exact: true }).click();
+  await ownerPage.getByLabel('Demo club name').fill('Hilltop Netball');
+  await ownerPage.getByLabel('Demo sport').selectOption('Netball');
+  await ownerPage.getByLabel('Colour Teal').click();
+  const shared = await ownerPage.locator('code', { hasText: '#/demo?' }).innerText();
+  const apiCalls = [];
+  ownerPage.on('request', (r) => { if (r.url().includes('/api/')) apiCalls.push(r.url()); });
+  await ownerPage.getByRole('button', { name: 'Open the demo' }).click();
+  await ownerPage.getByText('Hilltop Netball').first().waitFor();
+  await ownerPage.getByRole('button', { name: 'coach', exact: true }).click();
+  await ownerPage.getByRole('button', { name: 'Teams' }).first().waitFor();
+  await ownerPage.getByRole('button', { name: 'Players', exact: true }).first().click();
+  await ownerPage.getByText('Leo Parker').first().waitFor();
+  await ownerPage.screenshot({ path: `${here}/owner-demo.png` });
+  if (apiCalls.length) fail(`the demo must not talk to the server: ${apiCalls.join(', ')}`);
+  await ownerPage.getByRole('button', { name: 'Exit demo' }).click();
+  await ownerPage.getByText('Owner Console').waitFor();
+  await ownerPage.getByRole('button', { name: 'Clubs', exact: true }).click();
+  step('The owner opens a demo dressed as "Hilltop Netball" (teams, players, teal), shows each view, and exits');
+
+  const prospect = await (await browser.newContext()).newPage();
+  watch(prospect, 'prospect');
+  await prospect.goto(shared);
+  await prospect.getByText('Hilltop Netball').first().waitFor();
+  await prospect.getByRole('button', { name: 'parent', exact: true }).click();
+  await prospect.getByText(/Welcome, Sarah/).waitFor();
+  step('The shared demo link opens the same pretend club for a prospect, without signing in');
+
   await coach.reload();
   await coach.getByRole('button', { name: 'Grades', exact: true }).click();
   await coach.getByRole('button', { name: 'Add Grade' }).click();

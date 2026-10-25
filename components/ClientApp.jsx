@@ -8,11 +8,28 @@ import React, { useEffect, useState } from 'react';
 import SportsClubApp from './SportsClubApp';
 import { AuthGate } from './AuthScreens';
 import { OwnerConsole } from './OwnerConsole';
+import { demoFromHash } from './demo';
 
 export default function ClientApp() {
   const [ready, setReady] = useState(false);
-  useEffect(() => { setReady(true); }, []);
+  const [hash, setHash] = useState('');
+  useEffect(() => {
+    setReady(true);
+    setHash(window.location.hash);
+    const onHash = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   if (!ready) return null;
+  // A shared demo link (#/demo?...): the sample club, no sign-in, nothing saved
+  const demo = demoFromHash(hash);
+  if (demo) {
+    return (
+      <div id="root">
+        <SportsClubApp key={hash} mode="demo" demoClub={demo} onExitDemo={() => { window.location.hash = ''; }} />
+      </div>
+    );
+  }
   return (
     <div id="root">
       <AuthGate>

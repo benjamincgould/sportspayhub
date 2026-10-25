@@ -312,10 +312,27 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-export default function SportsClubApp({ mode = 'demo', session = null, signOut, updateUser }) {
+// Demo: the sample groups, renamed and moved to the chosen sport's venue
+function demoSquadsFor(demoClub) {
+  if (!demoClub || demoClub.sport === 'Swimming') return SEED_SQUADS;
+  const { group } = demoClub.branding;
+  const levels = ['Ages 7–10 · Beginners', 'Ages 10–13 · Competitive', 'Ages 13+ · Senior'];
+  const about = ['Basic skills and confidence, with plenty of fun.', 'Skills, fitness and game play. Club competition each term.', 'Advanced training and match preparation.'];
+  const names = ['Development', 'Junior', 'Senior'];
+  return SEED_SQUADS.map((sq, i) => ({
+    ...sq, name: `${names[i]} ${group}`, level: levels[i], description: about[i], location: demoClub.venue,
+    sessions: sq.sessions.map((s) => ({
+      ...s, location: `${demoClub.venue}, ${demoClub.spots[i]}`,
+      cancellations: s.cancellations.map((c) => ({ ...c, reason: c.reason === 'Pool maintenance' ? 'Venue maintenance' : c.reason })),
+    })),
+  }));
+}
+
+export default function SportsClubApp({ mode = 'demo', session = null, signOut, updateUser, demoClub = null, onExitDemo = null }) {
   const remote = mode === 'server';
   const me = session?.user || null;
-  const club = remote ? (me?.club || DEMO_CLUB) : DEMO_CLUB;
+  const club = remote ? (me?.club || DEMO_CLUB)
+    : demoClub ? { ...DEMO_CLUB, name: demoClub.name, sport: demoClub.sport, branding: { ...DEMO_CLUB.branding, ...demoClub.branding } } : DEMO_CLUB;
   const W = { ...DEMO_CLUB.branding, ...club.branding }; // what this club calls groups and members
   const lc = (t) => t.toLowerCase();
 
@@ -329,7 +346,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const [emailTemplate, setEmailTemplate] = useState("Dear {ParentName},\n\nPayment of ${Amount} for {AthleteName} is overdue.\n\nPlease update your billing details securely: {PaymentLink}");
 
   // Squads, pricing & timetables (athletes reference squads by id, so renames flow through)
-  const [squads, setSquads] = useState(remote ? [] : SEED_SQUADS);
+  const [squads, setSquads] = useState(() => (remote ? [] : demoSquadsFor(demoClub)));
 
   // Athletes (regularSessions = series ids they normally attend)
   const [athletes, setAthletes] = useState(remote ? [] : DEMO_ATHLETES);
@@ -1663,7 +1680,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
           )}
         </div>
         <p className="text-[11px] text-slate-400">
-          {searchTerm ? `${shownAthletes.length} of ${athletes.length} athletes` : `${athletes.length} athletes · tap a name for full details`}
+          {searchTerm ? `${shownAthletes.length} of ${athletes.length} ${lc(W.members)}` : `${athletes.length} ${lc(W.members)} · tap a name for full details`}
         </p>
       </div>
       {showAddAthlete && newAthlete && renderAddAthlete()}
@@ -1671,7 +1688,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <div className={`${card} text-center text-sm text-slate-500`}>No {lc(W.members)} yet. Tap Add {lc(W.member)} to add the first one.</div>
       )}
       {athletes.length > 0 && shownAthletes.length === 0 && (
-        <div className={`${card} text-center text-sm text-slate-500`}>No athletes match "{athleteSearch.trim()}".</div>
+        <div className={`${card} text-center text-sm text-slate-500`}>No {lc(W.members)} match "{athleteSearch.trim()}".</div>
       )}
       {athleteGroups.map(({ key, title, list }) => (
         <section key={key} className="space-y-2" aria-label={title}>
@@ -2559,11 +2576,12 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
       {/* DEMO ROLE SWITCHER BAR (demo mode only) */}
       {!remote && <div className="bg-slate-900 text-white p-2 text-xs flex justify-between items-center px-4">
-        <span className="font-semibold flex items-center gap-1"><Shield size={14} /> Demo Mode:</span>
-        <div className="flex gap-1">
+        <span className="font-semibold flex items-center gap-1"><Shield size={14} /> Demo<span className="hidden sm:inline"> · try each view</span>:</span>
+        <div className="flex gap-1 items-center">
           {['parent', 'treasurer', 'coach'].map((r) => (
             <button key={r} onClick={() => switchRole(r)} className={`px-2 py-1 rounded capitalize ${currentRole === r ? 'bg-indigo-600' : 'bg-slate-700'}`}>{r}</button>
           ))}
+          {onExitDemo && <button onClick={onExitDemo} className="ml-2 px-2 py-1 rounded bg-white text-slate-900 font-semibold">Exit demo</button>}
         </div>
       </div>}
 
