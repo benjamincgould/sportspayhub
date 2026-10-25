@@ -105,7 +105,6 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
   - **Bank transfer:** works without Stripe and has no fees. You enter your account name and number once. Each request shows them with a reference (like `INV00012`), and you tap **Mark paid** when the money arrives.
 - **Charge a club any time:** in the Owner Console, open a club's **Price & charges**, enter an amount and what it's for, and tap **Send payment request**. The club's coaches get an email with the ways to pay (14 days to pay), and it shows in their Settings. You can mark it paid, or cancel it until it's paid.
 - **Changing a paying club's price** moves their subscription to the new price from their next bill, with no extra charge for the change itself.
-- **Parents pay their club** through Stripe Connect, into the club's own Stripe account. A coach taps **Connect Stripe** in Settings. That money never passes through your account.
 
 ## Day-to-day admin
 
