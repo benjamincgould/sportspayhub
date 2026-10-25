@@ -235,7 +235,7 @@ test('a database set up before migrations were tracked is brought up to date onc
     await fresh.query(fs.readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'));
     assert.equal((await browser(fresh.base).get('/api/platform')).status, 200);
     const ids = (await fresh.query('select id from app.schema_migrations order by id')).map((r) => r.id);
-    assert.deepEqual(ids, ['0001_init', '0002_platform_charges', '0003_payment_details_and_email_change', '0004_families', '0005_passes', '0006_pass_offers']);
+    assert.deepEqual(ids, ['0001_init', '0002_platform_charges', '0003_payment_details_and_email_change', '0004_families', '0005_passes', '0006_pass_offers', '0007_trusted_devices_and_titles']);
     assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and not rowsecurity")).n, 0, 'new tables are locked too');
   } finally {
     await fresh.close();

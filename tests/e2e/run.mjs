@@ -137,6 +137,42 @@ try {
   await ownerPage.screenshot({ path: `${here}/owner-desktop.png` });
   step('Owner sets the club\'s own monthly price and sends a $120 payment request; the coach is emailed');
 
+  // ---------- The owner adds a treasurer, with their own title ----------
+  await clubCard.getByRole('button', { name: 'Add a person' }).click();
+  if (await ownerPage.getByLabel('Title').inputValue() !== 'Treasurer') fail('the title should start as Treasurer');
+  await ownerPage.getByLabel('Title').fill('Club Administrator');
+  await ownerPage.getByLabel('Their name').fill('Tess Ngata');
+  await ownerPage.getByLabel('Their email').fill('tess@riverside.test');
+  await ownerPage.getByRole('button', { name: 'Send invite' }).click();
+  await ownerPage.getByText(/Invite emailed to tess@riverside.test/).waitFor();
+  const tessCtx = await browser.newContext();
+  const tess = await tessCtx.newPage();
+  watch(tess, 'treasurer');
+  const tess2fa = await acceptAndSignIn(tess, await linkFor('tess@riverside.test'), 'tess@riverside.test');
+  await tess.getByText(/Club Administrator · Tess Ngata/i).waitFor();
+  step('The owner adds a treasurer to the club with the title "Club Administrator"; she sets up and sees her title');
+
+  // ---------- Remember this device for 8 hours ----------
+  await tess.getByRole('button', { name: 'Settings' }).click();
+  await tess.getByLabel('Sign out').click();
+  await tess.fill('#login-email', 'tess@riverside.test');
+  await tess.fill('#login-password', PW);
+  await tess.getByRole('button', { name: 'Sign in' }).click();
+  await tess.getByText('Enter your code').waitFor();
+  await tess.getByLabel(/Remember this device for 8 hours/).check();
+  await tess.fill('#mfa-code', totpFor(tess2fa.secret));
+  await tess.getByRole('button', { name: 'Continue' }).click();
+  await tess.getByText(/Club Administrator · Tess Ngata/i).waitFor();
+  // Idle too long: the session ends, but this device is remembered
+  await tessCtx.clearCookies({ name: 'club_session' });
+  await tess.reload();
+  await tess.fill('#login-email', 'tess@riverside.test');
+  await tess.fill('#login-password', PW);
+  await tess.getByRole('button', { name: 'Sign in' }).click();
+  await tess.getByText(/Club Administrator · Tess Ngata/i).waitFor();
+  if (await tess.getByText('Enter your code').count()) fail('a remembered device should not be asked for a code');
+  step('Ticking "Remember this device for 8 hours": after going idle, she signs in with just her password');
+
   await coach.reload();
   await coach.getByRole('button', { name: 'Grades', exact: true }).click();
   await coach.getByRole('button', { name: 'Add Grade' }).click();

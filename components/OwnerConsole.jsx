@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, LogOut, Plus, Gift, Ban, RotateCcw, Copy, Check, Search, CreditCard, ExternalLink } from './icons';
+import { Shield, LogOut, Plus, Gift, Ban, RotateCcw, Copy, Check, Search, CreditCard, ExternalLink, UserPlus } from './icons';
 import { api } from './api';
 import { AccountSecurity } from './AuthScreens';
 
@@ -17,9 +17,71 @@ const STATUS = {
 const SPORTS = ['Swimming', 'Football', 'Rugby', 'Netball', 'Basketball', 'Hockey', 'Cricket', 'Athletics', 'Gymnastics', 'Tennis', 'Dance', 'Martial arts', 'Cycling', 'Rowing', 'Other'];
 const field = 'w-full mt-1 p-2 border border-slate-200 rounded-lg text-sm bg-white';
 const card = 'bg-white p-4 rounded-xl shadow-sm border border-slate-100';
+const btn = 'py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold disabled:opacity-50';
 
 const nzd = (n) => `$${Number(n || 0).toFixed(2)}`;
 const CHARGE_STATUS = { open: ['Waiting for payment', 'bg-amber-50 text-amber-700'], paid: ['Paid', 'bg-emerald-50 text-emerald-700'], void: ['Cancelled', 'bg-slate-100 text-slate-500'] };
+
+// Add someone to run a club: a treasurer (or another coach), with a title the owner can change
+const DEFAULT_TITLE = { treasurer: 'Treasurer', coach: 'Coach' };
+function AddClubMember({ club, onDone, showFlash }) {
+  const [form, setForm] = useState({ role: 'treasurer', title: DEFAULT_TITLE.treasurer, name: '', email: '' });
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const setRole = (role) => setForm((f) => ({ ...f, role, title: !f.title || f.title === DEFAULT_TITLE[f.role] ? DEFAULT_TITLE[role] : f.title }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await api(`/api/owner/clubs/${club.id}/members`, { method: 'POST', body: form });
+      setResult({ ...res, email: form.email });
+      onDone();
+    } catch (err) {
+      showFlash(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (result) {
+    return (
+      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2 text-xs text-emerald-900">
+        <p>
+          {result.alreadyMember ? `${result.email} already has an account at ${club.name}; their title is now "${result.title || DEFAULT_TITLE[result.role]}".`
+            : result.emailed ? `Invite emailed to ${result.email}. They choose a password and set up two-step verification, then they're in as ${result.title || DEFAULT_TITLE[result.role]}.`
+            : `Email isn't set up, so send ${result.email} this link. It works once, for 3 days.`}
+        </p>
+        {result.inviteUrl && <code className="block p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{result.inviteUrl}</code>}
+        <button type="button" onClick={() => setResult(null)} className="font-semibold">Add another person</button>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="p-3 bg-slate-50 rounded-lg space-y-2">
+      <p className="text-xs font-semibold text-slate-700">Add a person to {club.name}</p>
+      <label className="block text-xs text-slate-500">Access
+        <select value={form.role} onChange={(e) => setRole(e.target.value)} className={field} aria-label="Access">
+          <option value="treasurer">Treasurer: payments, reports, contact details (no medical)</option>
+          <option value="coach">Coach: everything, including medical details</option>
+        </select>
+      </label>
+      <label className="block text-xs text-slate-500">Title shown in the app
+        <input required maxLength={60} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Club Administrator" className={field} aria-label="Title" />
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs text-slate-500">Name
+          <input maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={field} aria-label="Their name" />
+        </label>
+        <label className="block text-xs text-slate-500">Email
+          <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={field} aria-label="Their email" />
+        </label>
+      </div>
+      <p className="text-[11px] text-slate-500">They get an email to set their password, and set up two-step verification the first time they sign in. The club's coaches can change their title later.</p>
+      <button type="submit" disabled={busy} className={`w-full ${btn}`}>{busy ? 'Sending…' : 'Send invite'}</button>
+    </form>
+  );
+}
 
 // One club's price, set-up fee and charges: set them, charge any amount, cancel unpaid charges
 function ClubBilling({ club, defaults, onChanged, showFlash }) {
@@ -220,6 +282,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
   const [tab, setTab] = useState('clubs');
   const [deleting, setDeleting] = useState(null); // { id, name, typed }
   const [billingFor, setBillingFor] = useState(null); // club id
+  const [addingTo, setAddingTo] = useState(null);     // club id: adding a person
 
   const showFlash = (m) => { setFlash(m); setTimeout(() => setFlash(''), 3500); };
   const load = () => api('/api/owner/clubs').then(setData).catch((e) => setError(e.message));
@@ -359,6 +422,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button type="button" onClick={() => setBillingFor(billingFor === c.id ? null : c.id)} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${billingFor === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}><CreditCard size={11} /> Price & charges</button>
+                    <button type="button" onClick={() => setAddingTo(addingTo === c.id ? null : c.id)} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${addingTo === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}><UserPlus size={11} /> Add a person</button>
                     {c.status !== 'comped' && <button type="button" onClick={() => setAccess(c, 'free')} className="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md font-medium flex items-center gap-1"><Gift size={11} /> Give free access</button>}
                     {['comped', 'suspended'].includes(c.status) && (
                       <button type="button" onClick={() => setAccess(c, 'normal')} className={`text-[11px] px-2 py-1 rounded-md font-medium flex items-center gap-1 ${confirm === `normal-${c.id}` ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}>
@@ -372,6 +436,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                       </button>
                     )}
                   </div>
+                  {addingTo === c.id && <AddClubMember club={c} onDone={load} showFlash={showFlash} />}
                   {billingFor === c.id && <ClubBilling club={c} defaults={{ priceNzd: data.priceNzd, setupFeeNzd: data.setupFeeNzd, stripe: data.stripe, payMethods: data.payMethods }} onChanged={load} showFlash={showFlash} />}
                   {deleting && deleting.id === c.id && (
                     <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg space-y-2">

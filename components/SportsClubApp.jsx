@@ -2574,7 +2574,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
             {club.branding?.logo && <img src={club.branding.logo} alt="" className="w-7 h-7 rounded-md bg-white object-contain shrink-0" />}
             <span className="truncate">{club.name}</span>
           </h1>
-          <p className="text-xs text-indigo-200 uppercase tracking-wider font-medium">{currentRole} Portal{remote && me?.name ? ` · ${me.name}` : ''}</p>
+          <p className="text-xs text-indigo-200 uppercase tracking-wider font-medium">{remote && me?.title ? me.title : `${currentRole} Portal`}{remote && me?.name ? ` · ${me.name}` : ''}</p>
         </div>
         {remote ? (
           <button onClick={() => signOut(false)} className="bg-indigo-700 p-2 rounded-full" aria-label="Sign out" title="Sign out"><LogOut size={20} /></button>

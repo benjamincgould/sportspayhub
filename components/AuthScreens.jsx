@@ -214,6 +214,7 @@ function MfaVerifyScreen({ user, onDone, onRestart }) {
   const platform = useContext(PlatformContext);
   const [code, setCode] = useState('');
   const [recovery, setRecovery] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -221,7 +222,7 @@ function MfaVerifyScreen({ user, onDone, onRestart }) {
     e.preventDefault();
     setBusy(true); setError('');
     try {
-      onDone(await api('/api/auth/2fa/verify', { method: 'POST', body: { code, recovery } }));
+      onDone(await api('/api/auth/2fa/verify', { method: 'POST', body: { code, recovery, remember: !recovery && remember } }));
     } catch (err) {
       if (err.signedOut) return onRestart(err.message);
       setError(err.message);
@@ -238,6 +239,15 @@ function MfaVerifyScreen({ user, onDone, onRestart }) {
           {recovery ? 'Enter one of the recovery codes you saved when you set up two-step verification.' : `Open your authenticator app and enter the 6-digit code for ${platform.name}.`}
         </label>
         <CodeInput id="mfa-code" value={code} onChange={setCode} recovery={recovery} />
+        {!recovery && (
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-1" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            <span>
+              Remember this device for 8 hours
+              <span className="block text-xs text-slate-500">You'll still need your password, but not a code, if you're signed out for being idle. Don't tick this on a shared computer.</span>
+            </span>
+          </label>
+        )}
         {error && <Alert>{error}</Alert>}
         <button type="submit" disabled={busy || (!recovery && code.length !== 6)} className={primaryBtn}>{busy ? 'Checking…' : 'Continue'}</button>
       </form>
@@ -839,6 +849,7 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
   const [confirm, setConfirm] = useState(null); // `${action}-${id}`
   const [linking, setLinking] = useState(null); // { id, athleteIds }
   const [renaming, setRenaming] = useState(null); // { id, name }
+  const [retitling, setRetitling] = useState(null); // { id, title }
   const [log, setLog] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -881,6 +892,15 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
       setRenaming(null);
       load();
       showFlash('Name updated');
+    } catch (err) { showFlash(err.message); }
+  };
+
+  const saveTitle = async () => {
+    try {
+      await api(`/api/users/${retitling.id}/title`, { method: 'PUT', body: { title: retitling.title } });
+      setRetitling(null);
+      load();
+      showFlash('Title updated');
     } catch (err) { showFlash(err.message); }
   };
 
@@ -946,6 +966,11 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
               <AthletePicker value={form.athleteIds} onChange={(ids) => setForm({ ...form, athleteIds: ids })} />
             </div>
           )}
+          {form.role !== 'parent' && (
+            <label className="block text-xs text-slate-500">Title (optional)
+              <input maxLength={60} value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={form.role === 'coach' ? 'e.g. Head Coach' : 'e.g. Club Administrator'} className={field} />
+            </label>
+          )}
           {form.role !== 'parent' && <p className="text-[11px] text-amber-700">Staff will set up two-step verification the first time they sign in.</p>}
           <div className="flex gap-2">
             <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold">Send invite</button>
@@ -979,13 +1004,14 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
 
       {groups.map(({ role, list }) => (
         <section key={role} className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-1">{role === 'parent' ? 'Families' : role === 'coach' ? 'Coaches' : 'Treasurer'} · {list.length}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-1">{role === 'parent' ? 'Families' : role === 'coach' ? 'Coaches' : 'Treasurers & admin'} · {list.length}</p>
           {list.length === 0 && <p className="text-xs text-slate-400">No accounts yet.</p>}
           {list.map((u) => (
             <div key={u.id} className="py-2 border-t border-slate-50 space-y-1.5">
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
                   <p className="font-medium text-sm truncate">{u.name || u.email}</p>
+                  {u.title && <p className="text-xs text-indigo-700 font-medium truncate">{u.title}</p>}
                   <p className="text-xs text-slate-400 truncate">{u.email}</p>
                   {role === 'parent' && (
                     <p className="text-xs text-slate-500">
@@ -999,7 +1025,8 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
               <div className="flex flex-wrap gap-1.5">
                 {u.status !== 'disabled' && <button type="button" onClick={() => linkFor(u)} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">{u.status === 'invited' ? 'Re-send invite' : 'Email a password reset'}</button>}
                 {isCoach && role === 'parent' && <button type="button" onClick={() => { setRenaming(null); setLinking({ id: u.id, athleteIds: u.athleteIds }); }} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">Add or remove children</button>}
-                {(isCoach || role === 'parent') && <button type="button" onClick={() => { setLinking(null); setRenaming({ id: u.id, name: u.name || '' }); }} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">Edit name</button>}
+                {(isCoach || role === 'parent') && <button type="button" onClick={() => { setLinking(null); setRetitling(null); setRenaming({ id: u.id, name: u.name || '' }); }} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">Edit name</button>}
+                {isCoach && role !== 'parent' && <button type="button" onClick={() => { setLinking(null); setRenaming(null); setRetitling({ id: u.id, title: u.title || '' }); }} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-1 rounded-md font-medium">Edit title</button>}
                 {isCoach && u.id !== me.id && u.mfaEnabled && (
                   <button type="button" onClick={() => twoTap(`mfa-${u.id}`, () => api(`/api/users/${u.id}/reset-2fa`, { method: 'POST' }).then(() => showFlash('Two-step reset. They\'ll set it up again when they sign in.')))} className={`text-[11px] px-2 py-1 rounded-md font-medium ${confirm === `mfa-${u.id}` ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-700'}`}>
                     {confirm === `mfa-${u.id}` ? 'Tap again to reset 2-step' : 'Lost phone: reset 2-step'}
@@ -1021,6 +1048,13 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
                   <input value={renaming.name} onChange={(e) => setRenaming({ ...renaming, name: e.target.value })} maxLength={80} aria-label={`Name for ${u.email}`} className={`${field} mt-0 flex-1`} />
                   <button type="button" onClick={saveName} disabled={!renaming.name.trim()} className="px-3 bg-indigo-600 text-white rounded-lg text-xs font-semibold disabled:opacity-40">Save</button>
                   <button type="button" onClick={() => setRenaming(null)} className="px-3 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">Cancel</button>
+                </div>
+              )}
+              {retitling && retitling.id === u.id && (
+                <div className="flex gap-2 p-2 bg-slate-50 rounded-lg">
+                  <input value={retitling.title} onChange={(e) => setRetitling({ ...retitling, title: e.target.value })} maxLength={60} placeholder={role === 'coach' ? 'Coach' : 'Treasurer'} aria-label={`Title for ${u.email}`} className={`${field} mt-0 flex-1`} />
+                  <button type="button" onClick={saveTitle} className="px-3 bg-indigo-600 text-white rounded-lg text-xs font-semibold">Save</button>
+                  <button type="button" onClick={() => setRetitling(null)} className="px-3 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">Cancel</button>
                 </div>
               )}
               {linking && linking.id === u.id && (
