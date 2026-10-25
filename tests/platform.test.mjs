@@ -56,14 +56,15 @@ test('Stripe webhooks: a club\'s payment events only reach that club\'s members'
   const coachB = await finishSetup((await app.auth.inviteUser({ clubId: clubB, email: 'coach@b.test', role: 'coach' })).url, 'coach@b.test');
   const squad = (await coachB.post('/api/squads', squadBody(0))).json;
   const kidB = (await coachB.post('/api/athletes', { name: 'B Kid', squadId: squad.id })).json.athlete;
-  await app.query(`insert into app.billing (athlete_id, data) values ($1, '{"customerId":"cus_b","subscriptionId":"sub_b","status":"paid"}')`, kidB.id);
+  await app.query(`update app.families set billing = '{"customerId":"cus_b","subscriptionId":"sub_b"}' where id = $1`, kidB.familyId);
+  const familyStatus = async () => (await app.one('select status from app.families where id = $1', kidB.familyId)).status;
 
-  // Club A's account claims a failed payment for club B's member: ignored
+  // Club A's account claims a failed payment for club B's family: ignored
   await webhook({ account: 'acct_a', type: 'invoice.payment_failed', data: { object: { customer: 'cus_b' } } }, 'signed-with:whsec_connect');
-  assert.equal((await app.one('select data from app.billing where athlete_id = $1', kidB.id)).data.status, 'paid');
+  assert.equal(await familyStatus(), 'paid');
   // The same event from club B's own account is applied
   await webhook({ account: 'acct_b', type: 'invoice.payment_failed', data: { object: { customer: 'cus_b' } } }, 'signed-with:whsec_connect');
-  assert.equal((await app.one('select data from app.billing where athlete_id = $1', kidB.id)).data.status, 'overdue');
+  assert.equal(await familyStatus(), 'overdue');
   // Paid invoices land in the club's ledger once, however often Stripe retries
   const paid = { account: 'acct_b', type: 'invoice.paid', data: { object: { id: 'in_1', customer: 'cus_b', amount_paid: 2550 } } };
   await webhook(paid, 'signed-with:whsec_connect');
@@ -234,7 +235,7 @@ test('a database set up before migrations were tracked is brought up to date onc
     await fresh.query(fs.readFileSync(new URL('../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'));
     assert.equal((await browser(fresh.base).get('/api/platform')).status, 200);
     const ids = (await fresh.query('select id from app.schema_migrations order by id')).map((r) => r.id);
-    assert.deepEqual(ids, ['0001_init', '0002_platform_charges', '0003_payment_details_and_email_change']);
+    assert.deepEqual(ids, ['0001_init', '0002_platform_charges', '0003_payment_details_and_email_change', '0004_families']);
     assert.equal((await fresh.one("select count(*)::int as n from pg_tables where schemaname = 'app' and not rowsecurity")).n, 0, 'new tables are locked too');
   } finally {
     await fresh.close();

@@ -33,6 +33,7 @@ async function setUpAuthenticator(page) {
   const secret = (await page.locator('code').first().innerText()).replace(/\s/g, '');
   await page.fill('#mfa-setup-code', totpFor(secret));
   await page.getByRole('button', { name: 'Turn on two-step verification' }).click();
+  await page.locator('ul.font-mono li').first().waitFor();
   const codes = (await page.locator('ul.font-mono li').allInnerTexts());
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Go to the app' }).click();
@@ -166,7 +167,8 @@ try {
   watch(parent, 'parent');
   await acceptAndSignIn(parent, await linkFor('mere@riverside.test'), 'mere@riverside.test', { staff: false });
   await parent.getByText(/Welcome, Mere/).waitFor();
-  await parent.getByText(/Player: Tama Fox \(Under 12s\)/).waitFor();
+  await parent.getByText('Tama Fox', { exact: true }).first().waitFor();
+  await parent.getByText('Under 12s', { exact: true }).first().waitFor();
   step("Parent signs in and sees only their own child, in the club's colours");
 
   // ---------- The club switches to bank transfer ----------
@@ -180,18 +182,18 @@ try {
   await coach.getByText('Payment options saved').waitFor();
   await parent.reload();
   await parent.getByRole('button', { name: 'Payments' }).click();
-  await parent.getByText('Pay by bank transfer').waitFor();
+  await parent.getByRole('heading', { name: 'Pay by bank transfer' }).waitFor();
   await parent.getByText('03-1234-0123456-00').waitFor();
-  await parent.getByText(/^TAMAFOX\d+$/).first().waitFor();
+  await parent.getByText(/^FOXF\d+$/).first().waitFor();
   if (await parent.getByRole('button', { name: /card payments/ }).count()) fail('card payments should be hidden when the club only takes bank transfers');
   await parent.screenshot({ path: `${here}/parent-bank.png`, fullPage: true });
-  step('Coach switches the club to bank transfer only; the parent sees the account, their reference and automatic-payment steps');
+  step('Coach switches the club to bank transfer only; the parent sees the account, their family reference and automatic-payment steps');
 
   await coach.getByRole('button', { name: 'Home' }).click();
   await coach.getByRole('button', { name: 'Record payment' }).first().click();
-  await coach.getByLabel(/Amount received for Tama Fox/).fill('20');
+  await coach.getByLabel(/Amount received from Fox family/).fill('20');
   await coach.getByRole('button', { name: 'Mark paid' }).click();
-  await coach.getByText('Tama Fox marked paid ($20.00)').waitFor();
+  await coach.getByText('Fox family marked paid ($20.00)').waitFor();
   await coach.getByText(/last paid/).first().waitFor();
   step('The coach records the bank payment: marked paid, and the income goes in the books');
 
@@ -201,17 +203,23 @@ try {
   await coach.getByText('Payment options saved').waitFor();
   await parent.reload();
   await parent.getByRole('button', { name: 'Payments' }).click();
-  await parent.getByText('How will you pay for Tama Fox?').waitFor();
-  await parent.getByRole('button', { name: /^Bank transfer/ }).click();
-  await parent.getByText('Tama Fox will be paid for by bank transfer').waitFor();
-  await parent.getByText('Pay by bank transfer').waitFor();
-  if (await parent.getByRole('button', { name: /card payments/ }).count()) fail('with bank chosen for this child, the card buttons should be hidden');
-  await parent.getByRole('button', { name: /^Card/ }).click();
-  await parent.getByText('Tama Fox will be paid for by card').waitFor();
-  if (await parent.getByText('Pay by bank transfer').count()) fail('with card chosen, the bank details should be hidden');
-  await parent.getByRole('button', { name: /^Bank transfer/ }).click();
-  await parent.getByText('Tama Fox will be paid for by bank transfer').waitFor();
-  step('With both offered, the parent chooses per child: bank transfer or card');
+  await parent.getByText('Your club has set your family to pay by bank transfer.').waitFor();
+  await parent.getByRole('heading', { name: 'Pay by bank transfer' }).waitFor();
+  if (await parent.getByText(/How will you pay/).count()) fail('parents must not be able to choose card or bank');
+  if (await parent.getByRole('button', { name: /card payments/ }).count()) fail('with bank set for this family, the card buttons should be hidden');
+  await parent.getByText('Family total').waitFor();
+  await coach.getByRole('button', { name: 'Home' }).click();
+  await coach.getByLabel('Fox family: how they pay').selectOption('card');
+  await coach.getByText('Fox family now pays by card').waitFor();
+  await parent.reload();
+  await parent.getByRole('button', { name: 'Payments' }).click();
+  await parent.getByText(/Your club has set your family to pay by card/).waitFor();
+  await parent.getByRole('button', { name: /card payments/ }).waitFor();
+  if (await parent.getByRole('heading', { name: 'Pay by bank transfer' }).count()) fail('with card set, the bank details should be hidden');
+  await parent.screenshot({ path: `${here}/parent-family.png`, fullPage: true });
+  await coach.getByLabel('Fox family: how they pay').selectOption('bank');
+  await coach.getByText('Fox family now pays by bank transfer').waitFor();
+  step('With both offered, the club (not the parent) sets each family to card or bank; the parent sees one family page');
 
   await coach.getByRole('button', { name: 'Settings' }).click();
   await coach.getByText('Payments to the App Provider').waitFor();

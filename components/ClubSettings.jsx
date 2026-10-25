@@ -257,7 +257,7 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
 export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
   const p = club.payments || {};
   const [form, setForm] = useState({
-    card: p.card !== false, bank: Boolean(p.bank),
+    card: p.card !== false, bank: Boolean(p.bank), defaultMethod: p.defaultMethod === 'card' ? 'card' : 'bank',
     bankAccountName: p.bank?.accountName || '', bankAccountNumber: p.bank?.accountNumber || '', instructions: p.bank?.instructions || '',
   });
   const [saving, setSaving] = useState(false);
@@ -279,7 +279,7 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
   return (
     <form onSubmit={save} className={card}>
       <h3 className="font-semibold text-sm flex items-center gap-1.5"><CreditCard size={14} /> How Parents Pay</h3>
-      <p className="text-xs text-slate-500">Parents only see the ways you turn on here.</p>
+      <p className="text-xs text-slate-500">You decide how each family pays; parents can't change it. Brothers and sisters share one payment and one reference.</p>
 
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-1" checked={form.card} onChange={(e) => setForm({ ...form, card: e.target.checked })} />
@@ -293,7 +293,7 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
         <input type="checkbox" className="mt-1" checked={form.bank} onChange={(e) => setForm({ ...form, bank: e.target.checked })} />
         <span className="text-xs">
           <span className="font-semibold text-sm text-slate-800">Bank transfer</span>
-          <span className="block text-slate-500">No fees. Parents see your account and a reference for their child, and can set up a free automatic payment in their banking app. You tick payments off as they arrive.</span>
+          <span className="block text-slate-500">No fees. Parents see your account and a reference for their family, and can set up a free automatic payment in their banking app. You tick payments off as they arrive.</span>
         </span>
       </label>
 
@@ -306,9 +306,19 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash }) {
             <input required inputMode="numeric" value={form.bankAccountNumber} onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })} placeholder="12-3456-0123456-00" className={field} />
           </label>
           <label className="block text-xs text-slate-500">Note for parents (optional)
-            <input maxLength={200} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="e.g. Please use your child's reference" className={field} />
+            <input maxLength={200} value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="e.g. Please use your family reference" className={field} />
           </label>
         </div>
+      )}
+
+      {form.card && form.bank && (
+        <label className="block text-xs text-slate-500">New families pay by
+          <select value={form.defaultMethod} onChange={(e) => setForm({ ...form, defaultMethod: e.target.value })} className={field}>
+            <option value="bank">Bank transfer</option>
+            <option value="card">Card (Stripe)</option>
+          </select>
+          <span className="block text-[11px] text-slate-400 mt-1">You can change any family in Finance → Payment Reconciliation.</span>
+        </label>
       )}
 
       {!form.card && !form.bank && <p className="text-xs text-amber-700">Choose at least one way to pay.</p>}

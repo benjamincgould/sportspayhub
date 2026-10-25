@@ -279,6 +279,7 @@ const DEMO_ATHLETES = [
   { id: 5, name: 'Noah Smith', squadId: 1, frequency: 'weekly', status: 'paid', parent: 'Priya Smith', phone: '021 000 0005', email: 'priya.smith@example.com', address: '88 Mock Avenue, Hamilton 3210', allergies: 'Bee stings', medication: 'None', emergency: 'Sam Smith (021 000 0055)', cardLast4: '9995', autoDebit: true, hasSubscription: true, nextBillingDate: '2026-10-22', regularSessions: ['dev-wed'] },
   { id: 6, name: 'Jack Wilson', squadId: 2, frequency: 'fortnightly', status: 'paid', parent: 'Lucy Wilson', phone: '021 000 0006', email: 'lucy.wilson@example.com', address: '19 Trial Street, Cambridge 3432', allergies: 'None', medication: 'None', emergency: 'Chris Wilson (021 000 0066)', cardLast4: '4444', autoDebit: true, hasSubscription: true, nextBillingDate: '2026-10-29', regularSessions: ['brz-tue', 'brz-thu'] },
   { id: 7, name: 'Ella Brown', squadId: 3, frequency: 'weekly', status: 'paid', parent: 'Hannah Brown', phone: '021 000 0007', email: 'hannah.brown@example.com', address: '5 Sample Crescent, Te Awamutu 3800', allergies: 'None', medication: 'None', emergency: 'Josh Brown (021 000 0077)', cardLast4: '1117', autoDebit: false, hasSubscription: false, nextBillingDate: null, regularSessions: ['end-wed'] },
+  { id: 8, name: 'Isla Parker', squadId: 2, frequency: 'weekly', status: 'paid', parent: 'Sarah Parker', phone: '021 000 0001', email: 'sarah.parker@example.com', address: '12 Example Street, Hamilton 3200', allergies: 'None', medication: 'None', emergency: 'Mike Parker (021 000 0011)', cardLast4: '4242', autoDebit: true, hasSubscription: true, nextBillingDate: '2026-10-26', regularSessions: ['brz-tue'] },
 ];
 
 // Demo mode only: sample ledger (amounts are GST-inclusive; gst = whether GST applies)
@@ -374,25 +375,47 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const report = summarise(reportTx);
 
   const profileFromAthlete = (a) => ({ phone: a.phone || '', email: a.email || '', address: a.address || '', emergency: a.emergency || '', allergies: a.allergies || '', medication: a.medication || '' });
-  const [profileDraftState, setProfileDraft] = useState(() => {
-    const a = remote ? null : DEMO_ATHLETES.find((x) => x.id === DEMO_PARENT_ATHLETE_ID);
-    return a ? profileFromAthlete(a) : null;
-  });
   const [loaded, setLoaded] = useState(!remote);           // server data has arrived
   const [regularCounts, setRegularCounts] = useState({});   // server mode: regulars per session, all families
-  const [selectedChildId, setSelectedChildId] = useState(null);
   const [paymentsConnected, setPaymentsConnected] = useState(false);
   const [showAddAthlete, setShowAddAthlete] = useState(false);
   const [newAthlete, setNewAthlete] = useState(null);
   const [inviteRequest, setInviteRequest] = useState(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [recording, setRecording] = useState(null); // { id, amount } while recording a bank payment
+  const [recording, setRecording] = useState(null); // { id, amount } while recording a family's bank payment
+  const [familiesState, setFamilies] = useState([]);  // server mode: families (children billed together)
+  const [profileDrafts, setProfileDrafts] = useState({}); // parent: unsaved profile edits, per child
   const [confirmDeleteAthlete, setConfirmDeleteAthlete] = useState(null);
 
-  // Parents: the child they're looking at (siblings switch with the picker)
-  const parentAthletes = remote ? (currentRole === 'parent' ? athletes : []) : athletes.filter((a) => a.id === DEMO_PARENT_ATHLETE_ID);
-  const parentAthlete = parentAthletes.find((a) => a.id === selectedChildId) || parentAthletes[0] || null;
-  const parentSquad = parentAthlete ? squadById(parentAthlete.squadId) : null;
+  // Parents see all their children together, billed as one family
+  const parentAthletes = remote ? (currentRole === 'parent' ? athletes : []) : athletes.filter((a) => a.parent === athletes.find((x) => x.id === DEMO_PARENT_ATHLETE_ID)?.parent);
+  const parentAthlete = parentAthletes[0] || null;
+
+  // Families: brothers and sisters share one schedule, one way of paying (set by the club), one
+  // status, one bank reference and one total. (The demo treats each child as their own family.)
+  const surnameOf = (n) => String(n || '').trim().split(/\s+/).pop() || '';
+  // Demo mode: children with the same parent make one family
+  const demoFamilies = () => {
+    const groups = new Map();
+    for (const a of athletes) {
+      const key = (a.parent || '').trim().toLowerCase() || `id-${a.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(a);
+    }
+    return [...groups.values()].map((kids) => {
+      const a = kids[0];
+      return {
+        id: a.id, name: `${surnameOf(a.name)} family`, reference: `${surnameOf(a.name).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 9)}F${a.id}`,
+        athleteIds: kids.map((k) => k.id), frequency: a.frequency,
+        total: kids.reduce((sum, k) => sum + Number(squadById(k.squadId)?.[a.frequency] || 0), 0),
+        payMethod: 'card', payMethodChosen: true, status: kids.some((k) => k.status === 'overdue') ? 'overdue' : 'paid',
+        hasSubscription: Boolean(a.hasSubscription), cardLast4: a.cardLast4, nextBillingDate: a.nextBillingDate, cardStopping: false, lastPaidOn: a.lastPaidOn || null,
+      };
+    });
+  };
+  const families = remote ? familiesState : demoFamilies();
+  const membersOf = (f) => athletes.filter((a) => f.athleteIds.includes(a.id));
+  const parentFamilies = families.filter((f) => f.athleteIds.some((id) => parentAthletes.some((a) => a.id === id)));
 
   const rsvpKey = (athleteId, seriesId, date) => `${athleteId}|${seriesId}|${date}`;
   const isAttending = (a, s) => {
@@ -415,6 +438,15 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const showFlash = (msg) => { setFlash(msg); setTimeout(() => setFlash(''), 3500); };
   const updateAthlete = (id, patch) => setAthletes((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   const replaceAthlete = (a) => setAthletes((prev) => prev.map((x) => (x.id === a.id ? a : x)));
+  // A family changed: update it, and the payment details shown on each of its children
+  const applyFamily = (f) => {
+    if (!f) return;
+    setFamilies((prev) => (prev.some((x) => x.id === f.id) ? prev.map((x) => (x.id === f.id ? f : x)) : [...prev, f]));
+    setAthletes((prev) => prev.map((a) => (f.athleteIds.includes(a.id) ? {
+      ...a, familyId: f.id, frequency: f.frequency, status: f.status, payRef: f.reference, hasSubscription: f.hasSubscription,
+      autoDebit: f.hasSubscription, cardLast4: f.cardLast4, nextBillingDate: f.nextBillingDate, lastPaidOn: f.lastPaidOn,
+    } : a)));
+  };
 
   // Server mode: load everything this person is allowed to see
   const loadFromServer = async () => {
@@ -424,6 +456,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       const d = await api('/api/bootstrap');
       setSquads(d.squads);
       setAthletes(d.athletes);
+      setFamilies(d.families || []);
       setTransactions(d.transactions);
       setRsvpOverrides(d.rsvps);
       setAttendance(d.attendance);
@@ -483,11 +516,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep the parent's profile form in step with the child being viewed
-  useEffect(() => {
-    if (parentAthlete) setProfileDraft(profileFromAthlete(parentAthlete));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parentAthlete?.id, loaded]);
 
   // Runs a server call; shows its error message instead of crashing. Returns null on failure.
   const attempt = async (fn) => {
@@ -510,6 +538,17 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     if (remote) return; // demo only
     setCurrentRole(role); setActiveTab('home');
     setEditingAthleteId(null); setSquadForm(null); setSessionForm(null); setReminderFor(null);
+  };
+
+  // Reminder text for a family: every child's name and the family total
+  const fillFamilyTemplate = (template, f) => {
+    const kids = membersOf(f);
+    const names = kids.map((k) => k.name.split(' ')[0]);
+    return template
+      .replaceAll('{ParentName}', ((kids.find((k) => k.parent) || {}).parent || '').split(' ')[0])
+      .replaceAll('{AthleteName}', names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || '')
+      .replaceAll('{Amount}', Number(f.total || 0).toFixed(2))
+      .replaceAll('{PaymentLink}', `${window.location.origin}/  (reference ${f.reference})`);
   };
 
   const fillTemplate = (template, a) => template
@@ -608,6 +647,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     if (remote) {
       const res = await api(`/api/athletes/${a.id}/plan`, { method: 'POST', body: { squadId, frequency } });
       replaceAthlete(res.athlete);
+      applyFamily(res.family);
       return res.athlete;
     }
     const patch = { squadId, frequency, ...(squadId !== a.squadId ? { regularSessions: [] } : {}) };
@@ -615,13 +655,15 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     return { ...a, ...patch };
   };
 
-  // Parent: pick how often to pay
-  const changeFrequency = async (frequency) => {
-    if (frequency === parentAthlete.frequency) return;
+  // Parent: how often the whole family pays
+  const changeFamilyFrequency = async (f, frequency) => {
+    if (frequency === f.frequency) return;
+    if (!remote) { f.athleteIds.forEach((id) => updateAthlete(id, { frequency })); return; }
     setBusy('freq');
     try {
-      await changePlan(parentAthlete, parentAthlete.squadId, frequency);
-      showFlash(`You'll now pay ${FREQ_TITLE[frequency].toLowerCase()} (${money(parentSquad[frequency])}/${FREQ_LABEL[frequency]})`);
+      const res = await api(`/api/families/${f.id}/frequency`, { method: 'PUT', body: { frequency } });
+      applyFamily(res.family);
+      showFlash(`Your family now pays ${FREQ_TITLE[frequency].toLowerCase()}: ${money(res.family.total)}/${FREQ_LABEL[frequency]}`);
     } catch (e) {
       if (!e.signedOut) showFlash(e.message);
     } finally {
@@ -629,43 +671,47 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     }
   };
 
-  const startAutoPay = () => {
+  // One card payment for the whole family
+  const startAutoPay = (f) => {
     if (!remote) {
-      updateAthlete(parentAthlete.id, { autoDebit: true, hasSubscription: true, cardLast4: parentAthlete.cardLast4 || '4242' });
+      f.athleteIds.forEach((id) => updateAthlete(id, { autoDebit: true, hasSubscription: true, cardLast4: '4242' }));
       showFlash('Automatic payments set up (demo)');
       return;
     }
-    redirectTo('autopay', '/api/checkout/subscription', { athleteId: parentAthlete.id });
+    redirectTo('autopay', '/api/checkout/subscription', { familyId: f.id });
   };
 
-  const openBillingPortal = () => {
+  const openBillingPortal = (f) => {
     if (!remote) { showFlash('Opens the secure Stripe billing page once payments are connected'); return; }
-    redirectTo('portal', '/api/portal', { athleteId: parentAthlete.id });
+    redirectTo('portal', '/api/portal', { familyId: f.id });
   };
 
-  const buyPass = () => {
+  // A 10-session pass is for one child
+  const buyPass = (a) => {
+    const sq = squadById(a.squadId);
     if (!remote) {
       setTransactions((prev) => [...prev, {
         id: Date.now(), date: todayISO, type: 'Income', category: 'Session Pass',
-        description: `${parentAthlete.name} - 10-Session Pass`, amount: parentSquad.pass, gst: true,
+        description: `${a.name} - 10-Session Pass`, amount: sq.pass, gst: true,
       }]);
-      showFlash(`10-session pass purchased (${money(parentSquad.pass)}) — demo only`);
+      showFlash(`10-session pass purchased (${money(sq.pass)}) — demo only`);
       return;
     }
-    redirectTo('pass', '/api/checkout/pass', { athleteId: parentAthlete.id });
+    redirectTo(`pass-${a.id}`, '/api/checkout/pass', { athleteId: a.id });
   };
 
-  const saveProfile = async () => {
-    const profileDraft = profileDraftState || profileFromAthlete(parentAthlete);
-    if (profileDraft.email && !/^\S+@\S+\.\S+$/.test(profileDraft.email)) { showFlash('Check the email address'); return; }
+  const saveProfile = async (a) => {
+    const draft = profileDrafts[a.id] || profileFromAthlete(a);
+    if (draft.email && !/^\S+@\S+\.\S+$/.test(draft.email)) { showFlash('Check the email address'); return; }
     if (remote) {
-      const res = await attempt(() => api(`/api/athletes/${parentAthlete.id}/profile`, { method: 'PUT', body: profileDraft }));
+      const res = await attempt(() => api(`/api/athletes/${a.id}/profile`, { method: 'PUT', body: draft }));
       if (!res) return;
       replaceAthlete(res.athlete);
     } else {
-      updateAthlete(parentAthlete.id, profileDraft);
+      updateAthlete(a.id, draft);
     }
-    showFlash('Details saved');
+    setProfileDrafts((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy; });
+    showFlash(`${a.name.split(' ')[0]}'s details saved`);
   };
 
   // ----- Athlete admin -----
@@ -673,7 +719,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const startEditAthlete = (a) => {
     setEditingAthleteId(a.id);
     setAthleteDraft({
-      squadId: a.squadId, frequency: a.frequency, status: a.status, payMethod: a.payMethod || '',
+      squadId: a.squadId, frequency: a.frequency, status: a.status,
+      payMethod: (families.find((f) => f.athleteIds.includes(a.id)) || {}).payMethod || '',
       parent: a.parent || '', phone: a.phone || '', email: a.email || '', address: a.address || '',
       ...(isCoach ? { emergency: a.emergency || '', allergies: a.allergies || '', medication: a.medication || '' } : {}),
     });
@@ -687,6 +734,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       if (remote) {
         const res = await api(`/api/athletes/${a.id}`, { method: 'PUT', body: athleteDraft });
         replaceAthlete(res.athlete);
+        applyFamily(res.family);
         if (moved) loadFromServer(); // regular-day counts change when someone moves squad
       } else {
         if (moved || frequency !== a.frequency) await changePlan(a, squadId, frequency);
@@ -711,14 +759,17 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     if (!f.name.trim()) { showFlash(`Enter the ${lc(W.member)}'s name`); return; }
     if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) { showFlash('Check the email address'); return; }
     let created;
+    let createdFamily = null;
     if (remote) {
       const res = await attempt(() => api('/api/athletes', { method: 'POST', body: f }));
       if (!res) return;
       created = res.athlete;
+      createdFamily = res.family;
     } else {
       created = { ...f, name: f.name.trim(), id: Math.max(0, ...athletes.map((a) => a.id)) + 1, status: 'paid', regularSessions: [], autoDebit: false, hasSubscription: false, cardLast4: null, nextBillingDate: null, emergency: f.emergency || '', allergies: f.allergies || '', medication: f.medication || '' };
     }
     setAthletes((prev) => [...prev, created]);
+    applyFamily(createdFamily);
     setShowAddAthlete(false);
     setNewAthlete(null);
     setAthleteSearch('');
@@ -976,44 +1027,55 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     </button>
   );
 
-  // ----- Parent -----
+  // ----- Parent (every child on one page) -----
 
-  const parentUpcoming = () => {
+  const upcomingFor = (a) => {
+    const sq = squadById(a.squadId);
     const out = [];
-    for (let i = 0; i < BOOKING_DAYS; i++) out.push(...sessionsOn(parentSquad, addDays(todayISO, i)));
+    if (!sq) return out;
+    for (let i = 0; i < BOOKING_DAYS; i++) out.push(...sessionsOn(sq, addDays(todayISO, i)));
     return out;
   };
+  const howPaid = (f) => (f.payMethod === 'card'
+    ? (f.hasSubscription ? `Card auto-pay${f.cardLast4 ? ` (•••• ${f.cardLast4})` : ''}` : 'Card')
+    : `Bank transfer · reference ${f.reference}`);
 
   const renderParentHome = () => {
-    const nextSession = parentUpcoming().find((s) => isAttending(parentAthlete, s));
+    const firstName = ((remote ? me?.name : parentAthlete.parent) || 'there').split(' ')[0];
     return (
       <div className="space-y-4">
         <div className={card}>
-          {parentAthlete.status === 'paid'
-            ? <span className="inline-block px-2.5 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700 rounded-full mb-2">Account Status: Active</span>
-            : <span className="inline-block px-2.5 py-1 text-xs font-semibold bg-rose-100 text-rose-700 rounded-full mb-2">Account Status: Payment Overdue</span>}
-          <h2 className="text-xl font-bold text-slate-900">Welcome, {((remote ? me?.name : parentAthlete.parent) || 'there').split(' ')[0]}</h2>
-          <p className="text-sm text-slate-500">{W.member}: {parentAthlete.name} ({parentSquad.name})</p>
-          <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-            <div>
-              <p className="text-xs text-slate-400">Next Payment</p>
-              <p className="font-semibold text-sm">
-                {parentAthlete.nextBillingDate
-                  ? `${money(priceFor(parentAthlete))} due ${fmtShort(parentAthlete.nextBillingDate)}`
-                  : `${money(priceFor(parentAthlete))}/${FREQ_LABEL[parentAthlete.frequency]}`}
-              </p>
+          <h2 className="text-xl font-bold text-slate-900">Welcome, {firstName}</h2>
+          {parentFamilies.map((f) => (
+            <div key={f.id} className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-slate-400">{f.name} · {FREQ_TITLE[f.frequency]}</p>
+                <p className="font-semibold text-sm">{money(f.total)}{f.nextBillingDate ? ` due ${fmtShort(f.nextBillingDate)}` : `/${FREQ_LABEL[f.frequency]}`}</p>
+                <p className="text-xs text-slate-500 truncate">{howPaid(f)}</p>
+              </div>
+              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 ${f.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                {f.status === 'paid' ? 'Paid up' : 'Payment overdue'}
+              </span>
             </div>
-            <span className={`text-xs px-3 py-1.5 rounded-lg font-medium ${parentAthlete.autoDebit ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-700'}`}>
-              {parentAthlete.autoDebit ? 'Auto-Pay On' : 'Auto-Pay Off'}
-            </span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100">
-            <p className="text-xs text-slate-400">Next Training</p>
-            <p className="font-semibold text-sm">
-              {nextSession ? `${fmtDay(nextSession.date)} · ${fmtTime(nextSession.start)}–${fmtTime(nextSession.end)}` : 'No sessions booked — choose days in Bookings'}
-            </p>
-            {nextSession && <p className="text-xs text-slate-400">{nextSession.location}</p>}
-          </div>
+          ))}
+        </div>
+
+        <div className={`grid gap-3 ${parentAthletes.length > 1 ? 'md:grid-cols-2' : ''}`}>
+          {parentAthletes.map((a) => {
+            const sq = squadById(a.squadId);
+            const next = upcomingFor(a).find((s) => isAttending(a, s));
+            return (
+              <div key={a.id} className={card}>
+                <p className="font-semibold text-sm">{a.name}</p>
+                <p className="text-xs text-slate-500">{sq ? sq.name : `Not in a ${lc(W.group)} yet`}</p>
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-xs text-slate-400">Next Training</p>
+                  <p className="font-semibold text-sm">{next ? `${fmtDay(next.date)} · ${fmtTime(next.start)}–${fmtTime(next.end)}` : 'No sessions booked — choose days in Bookings'}</p>
+                  {next && <p className="text-xs text-slate-400">{next.location}</p>}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className={card}>
@@ -1031,16 +1093,17 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     );
   };
 
-  const renderBookings = () => {
-    const a = parentAthlete;
-    const series = seriesAsOf(parentSquad, todayISO);
-    const upcoming = parentUpcoming();
+  const renderChildBookings = (a) => {
+    const sq = squadById(a.squadId);
     const firstName = a.name.split(' ')[0];
+    if (!sq) return <div key={a.id} className={`${card} text-sm text-slate-500`}>{a.name} isn't in a {lc(W.group)} yet. Ask the coach.</div>;
+    const series = seriesAsOf(sq, todayISO);
+    const upcoming = upcomingFor(a);
     return (
-      <div className="space-y-4">
+      <section key={a.id} className="space-y-3">
         <div>
-          <h2 className="font-bold text-base">Training Days</h2>
-          <p className="text-xs text-slate-500">{parentSquad.name}{parentSquad.level ? ` · ${parentSquad.level}` : ''}</p>
+          <h3 className="font-bold text-sm text-slate-800">{a.name}</h3>
+          <p className="text-xs text-slate-500">{sq.name}{sq.level ? ` · ${sq.level}` : ''}</p>
         </div>
 
         <div className={`${card} space-y-2`}>
@@ -1049,14 +1112,15 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
           {series.length === 0 && <p className="text-xs text-slate-400">The coach hasn't added training times for this {lc(W.group)} yet.</p>}
           {series.map((s) => {
             const selected = (a.regularSessions || []).includes(s.seriesId);
-            const count = regularCount(parentSquad.id, s.seriesId);
-            const full = parentSquad.capacity && count >= parentSquad.capacity && !selected;
-            const note = seriesNote(parentSquad, s, todayISO);
+            const count = regularCount(sq.id, s.seriesId);
+            const full = sq.capacity && count >= sq.capacity && !selected;
+            const note = seriesNote(sq, s, todayISO);
             return (
               <button
                 key={s.seriesId}
                 onClick={() => toggleRegular(a, s.seriesId)}
                 disabled={full}
+                aria-label={`${firstName}: ${DAY_NAMES[s.day]} ${fmtTime(s.start)}`}
                 className={`w-full text-left p-3 rounded-lg border flex items-start gap-3 disabled:opacity-50 ${selected ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}
               >
                 <span className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${selected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'}`}>
@@ -1067,8 +1131,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                   <span className="block text-xs text-slate-400 flex items-center gap-1"><MapPin size={10} /> {s.location}</span>
                   {note && <span className="block text-xs text-amber-700 mt-0.5">{note}</span>}
                 </span>
-                {parentSquad.capacity ? (
-                  <span className={`text-[11px] shrink-0 ${full ? 'text-rose-600 font-semibold' : 'text-slate-400'}`}>{full ? 'Full' : `${count}/${parentSquad.capacity}`}</span>
+                {sq.capacity ? (
+                  <span className={`text-[11px] shrink-0 ${full ? 'text-rose-600 font-semibold' : 'text-slate-400'}`}>{full ? 'Full' : `${count}/${sq.capacity}`}</span>
                 ) : null}
               </button>
             );
@@ -1076,8 +1140,8 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         </div>
 
         <div className={`${card} space-y-2`}>
-          <h3 className="font-semibold text-sm">Next {BOOKING_DAYS / 7} weeks</h3>
-          <p className="text-xs text-slate-500">Tap a session to change just that date, e.g. if {firstName} is sick or wants an extra swim.</p>
+          <h3 className="font-semibold text-sm">{firstName} · next {BOOKING_DAYS / 7} weeks</h3>
+          <p className="text-xs text-slate-500">Tap a session to change just that date, e.g. if {firstName} is sick or wants an extra session.</p>
           {upcoming.length === 0 && <p className="text-xs text-slate-400">No sessions scheduled in the next {BOOKING_DAYS} days.</p>}
           {upcoming.map((s) => {
             const attending = isAttending(a, s);
@@ -1105,185 +1169,187 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
             );
           })}
         </div>
-      </div>
+      </section>
     );
   };
 
-  // How this club takes payments (card, bank or both; the demo shows card)
+  const renderBookings = () => (
+    <div className="space-y-6">
+      <h2 className="font-bold text-base">Training Days</h2>
+      {parentAthletes.map(renderChildBookings)}
+    </div>
+  );
+
+  // How this club takes payments (card, bank or both; the demo shows card). The club decides each
+  // family's way of paying; parents only see the one for their family.
   const cardOn = !remote || club.payments?.card !== false;
   const bankDetails = remote ? club.payments?.bank || null : null;
-  const payRef = parentAthlete ? (parentAthlete.payRef || `${String(parentAthlete.name || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10)}${parentAthlete.id}`) : '';
-  // Each child is paid for one way. With both offered, the parent chooses per child.
   const bothOffered = cardOn && Boolean(bankDetails);
-  const methodFor = (a) => (!a ? null
-    : bothOffered ? (a.payMethod || (a.hasSubscription ? 'card' : null))
-    : bankDetails ? 'bank' : 'card');
-  const parentMethod = methodFor(parentAthlete);
-  const showBank = Boolean(bankDetails) && parentMethod !== 'card';
-  const showCard = cardOn && parentMethod !== 'bank';
 
-  const choosePayMethod = async (method) => {
-    if (!remote) { updateAthlete(parentAthlete.id, { payMethod: method }); return; }
-    setBusy('method');
-    try {
-      const res = await api(`/api/athletes/${parentAthlete.id}/pay-method`, { method: 'PUT', body: { method } });
-      replaceAthlete(res.athlete);
-      showFlash(method === 'bank'
-        ? `${parentAthlete.name} will be paid for by bank transfer${res.cardStopsOn ? `. Card payments stop after ${fmtShort(res.cardStopsOn)}` : ''}`
-        : `${parentAthlete.name} will be paid for by card`);
-    } catch (e) {
-      if (!e.signedOut) showFlash(e.message);
-    } finally {
-      setBusy('');
-    }
+  const renderFamilyPayment = (f) => {
+    const kids = membersOf(f);
+    const showBank = Boolean(bankDetails) && f.payMethod === 'bank';
+    const showCard = cardOn && f.payMethod === 'card';
+    const totalAt = (freq) => kids.reduce((sum, k) => sum + Number(squadById(k.squadId)?.[freq] || 0), 0);
+    return (
+      <div key={f.id} className="space-y-4">
+        <div className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white p-4 rounded-xl shadow-md">
+          <p className="text-xs text-indigo-100">{f.name} · {kids.length} {kids.length === 1 ? lc(W.member) : lc(W.members)}</p>
+          <p className="text-lg font-bold">{money(f.total)} {FREQ_TITLE[f.frequency].toLowerCase()}</p>
+          <p className="text-xs mt-2 text-indigo-100">{howPaid(f)}{f.nextBillingDate ? ` · next payment ${fmtShort(f.nextBillingDate)}` : ''}</p>
+        </div>
+
+        <div className={`${card} space-y-1`}>
+          <h3 className="font-semibold text-sm mb-1">What you pay for</h3>
+          {kids.map((k) => {
+            const sq = squadById(k.squadId);
+            return (
+              <div key={k.id} className="flex justify-between items-center py-1.5 border-b border-slate-50 text-sm gap-2">
+                <span className="min-w-0">
+                  <span className="block font-medium">{k.name}</span>
+                  <span className="block text-xs text-slate-400">{sq ? sq.name : `Not in a ${lc(W.group)} yet`}</span>
+                </span>
+                <span className="font-medium shrink-0">{money(sq?.[f.frequency] || 0)}</span>
+              </div>
+            );
+          })}
+          <div className="flex justify-between text-sm font-bold pt-1.5">
+            <span>Family total</span><span>{money(f.total)}/{FREQ_LABEL[f.frequency]}</span>
+          </div>
+        </div>
+
+        <div className={`${card} space-y-2`}>
+          <h3 className="font-semibold text-sm">How often does your family pay?</h3>
+          {Object.keys(FREQ_TITLE).map((freq) => {
+            const selected = f.frequency === freq;
+            return (
+              <button
+                key={freq}
+                onClick={() => changeFamilyFrequency(f, freq)}
+                disabled={busy === 'freq'}
+                className={`w-full flex justify-between items-center p-3 rounded-lg border text-sm disabled:opacity-60 ${selected ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-semibold' : 'border-slate-200 text-slate-700'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-indigo-600' : 'border-slate-300'}`}>
+                    {selected && <span className="w-2 h-2 rounded-full bg-indigo-600" />}
+                  </span>
+                  {FREQ_TITLE[freq]}
+                </span>
+                <span>{money(totalAt(freq))}/{FREQ_LABEL[freq]}</span>
+              </button>
+            );
+          })}
+          <p className="text-[11px] text-slate-400">
+            {f.hasSubscription
+              ? 'Your card payments switch to the new schedule from today. Any unused time is credited to your next payment.'
+              : showBank ? 'If you change this, update your automatic payment in your banking app to the new amount.' : 'This covers all your children.'}
+          </p>
+        </div>
+
+        {showBank && (
+          <div className={`${card} space-y-2 text-sm`}>
+            <h3 className="font-semibold text-sm">Pay by bank transfer</h3>
+            <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
+              <p className="flex justify-between gap-2"><span className="text-slate-500">Account name</span><span className="font-medium text-right select-all">{bankDetails.accountName}</span></p>
+              <p className="flex justify-between gap-2"><span className="text-slate-500">Account number</span><span className="font-mono font-medium select-all">{bankDetails.accountNumber}</span></p>
+              <p className="flex justify-between gap-2"><span className="text-slate-500">Reference</span><span className="font-mono font-medium select-all">{f.reference}</span></p>
+              <p className="flex justify-between gap-2"><span className="text-slate-500">Amount</span><span className="font-medium">{money(f.total)} {FREQ_TITLE[f.frequency].toLowerCase()}</span></p>
+            </div>
+            <button onClick={() => copyText(`${bankDetails.accountNumber}`, 'Account number')} className="w-full text-xs bg-slate-100 text-slate-700 py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Copy size={12} /> Copy account number</button>
+            <div className="text-xs text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-700">Set it and forget it: one free automatic payment for the family</p>
+              <ol className="list-decimal pl-4 space-y-0.5">
+                <li>In your banking app, choose <span className="font-medium">Pay someone</span> or <span className="font-medium">Automatic payment</span>.</li>
+                <li>Enter the account name and number above.</li>
+                <li>Put <span className="font-mono font-medium">{f.reference}</span> in the reference, so the club knows it's from your family.</li>
+                <li>Set it to repeat <span className="font-medium">{FREQ_TITLE[f.frequency].toLowerCase()}</span> for {money(f.total)}.</li>
+              </ol>
+              {bankDetails.instructions && <p className="text-slate-500">{bankDetails.instructions}</p>}
+              <p className="text-[11px] text-slate-400">The club ticks off payments as they arrive.</p>
+            </div>
+          </div>
+        )}
+
+        {showCard && (f.hasSubscription ? (
+          <button onClick={() => openBillingPortal(f)} disabled={busy === 'portal'} className={`w-full ${primaryBtn} bg-slate-800`}>
+            <CreditCard size={14} /> {busy === 'portal' ? 'Opening…' : 'Update card / manage billing'}
+          </button>
+        ) : (
+          <button onClick={() => startAutoPay(f)} disabled={busy === 'autopay'} className={`w-full ${primaryBtn}`}>
+            <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `Set up automatic ${FREQ_TITLE[f.frequency].toLowerCase()} card payments (${money(f.total)})`}
+          </button>
+        ))}
+        {f.cardStopping && <p className="text-[11px] text-amber-700 text-center">Your card payments stop at the end of the period already paid{f.nextBillingDate ? ` (${fmtShort(f.nextBillingDate)})` : ''}. After that, please pay by bank transfer.</p>}
+
+        <div className={`${card} space-y-2`}>
+          <h3 className="font-semibold text-sm">10-session passes</h3>
+          {kids.map((k) => {
+            const sq = squadById(k.squadId);
+            if (!sq) return null;
+            return showCard ? (
+              <button key={k.id} onClick={() => buyPass(k)} disabled={busy === `pass-${k.id}`} className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs disabled:opacity-50">
+                {busy === `pass-${k.id}` ? 'Opening secure checkout…' : `Buy a pass for ${k.name.split(' ')[0]} by card (${money(sq.pass)})`}
+              </button>
+            ) : (
+              <p key={k.id} className="text-xs text-slate-600 flex justify-between gap-2"><span>{k.name.split(' ')[0]} · {sq.name}</span><span className="font-medium">{money(sq.pass)}</span></p>
+            );
+          })}
+          {!showCard && showBank && <p className="text-[11px] text-slate-500">Pay the same account with reference <span className="font-mono">{f.reference}</span>, and let the club know which child it's for.</p>}
+        </div>
+
+        <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
+          <Shield size={11} />
+          {!remote ? 'Demo mode — no real payments are taken.'
+            : f.payMethod === 'card' ? 'Your club has set your family to pay by card. Card details are handled securely by Stripe and never touch this app.'
+            : 'Your club has set your family to pay by bank transfer.'}
+        </p>
+      </div>
+    );
   };
 
   const renderPayments = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="font-bold text-base">Billing & Passes</h2>
+        <h2 className="font-bold text-base">Family Payments</h2>
         {syncButton}
       </div>
-
-      <div className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white p-4 rounded-xl shadow-md">
-        <p className="text-xs text-indigo-100">Current Plan · {parentSquad.name}</p>
-        <p className="text-lg font-bold">{FREQ_TITLE[parentAthlete.frequency]} ({money(priceFor(parentAthlete))}/{FREQ_LABEL[parentAthlete.frequency]})</p>
-        <p className="text-xs mt-2 text-indigo-100">
-          {parentAthlete.cardLast4 ? `Card ending in •••• ${parentAthlete.cardLast4}` : parentMethod === 'bank' || !cardOn ? `Paying by bank transfer · reference ${payRef}` : 'No card on file'}
-          {parentAthlete.nextBillingDate && ` · next payment ${fmtShort(parentAthlete.nextBillingDate)}`}
-        </p>
-      </div>
-
-      <div className={`${card} space-y-2`}>
-        <h3 className="font-semibold text-sm">How often would you like to pay?</h3>
-        {Object.keys(FREQ_TITLE).map((f) => {
-          const selected = parentAthlete.frequency === f;
-          return (
-            <button
-              key={f}
-              onClick={() => changeFrequency(f)}
-              disabled={busy === 'freq'}
-              className={`w-full flex justify-between items-center p-3 rounded-lg border text-sm disabled:opacity-60 ${selected ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-semibold' : 'border-slate-200 text-slate-700'}`}
-            >
-              <span className="flex items-center gap-2">
-                <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-indigo-600' : 'border-slate-300'}`}>
-                  {selected && <span className="w-2 h-2 rounded-full bg-indigo-600" />}
-                </span>
-                {FREQ_TITLE[f]}
-              </span>
-              <span>{money(parentSquad[f])}/{FREQ_LABEL[f]}</span>
-            </button>
-          );
-        })}
-        {parentAthlete.hasSubscription && (
-          <p className="text-[11px] text-slate-400">Switching starts the new schedule from today. Any unused time on your current plan is credited to your next payment.</p>
-        )}
-      </div>
-
-      {bothOffered && (
-        <div className={`${card} space-y-2`}>
-          <h3 className="font-semibold text-sm">How will you pay for {parentAthlete.name}?</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {[['bank', 'Bank transfer', 'No fees'], ['card', 'Card', 'Automatic, through Stripe']].map(([m, label, hint]) => (
-              <button key={m} type="button" onClick={() => choosePayMethod(m)} disabled={busy === 'method'} aria-pressed={parentMethod === m}
-                className={`p-3 rounded-lg border text-left disabled:opacity-60 ${parentMethod === m ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}>
-                <span className={`block text-sm font-semibold ${parentMethod === m ? 'text-indigo-700' : 'text-slate-700'}`}>{label}</span>
-                <span className="block text-[11px] text-slate-500">{hint}</span>
-              </button>
-            ))}
-          </div>
-          {parentAthletes.length > 1 && <p className="text-[11px] text-slate-400">Each child can be paid for a different way.</p>}
-          {parentAthlete.cardStopping && <p className="text-[11px] text-amber-700">Card payments for {parentAthlete.name} stop at the end of the period already paid{parentAthlete.nextBillingDate ? ` (${fmtShort(parentAthlete.nextBillingDate)})` : ''}.</p>}
-        </div>
-      )}
-
-      {showBank && (
-        <div className={`${card} space-y-2 text-sm`}>
-          <h3 className="font-semibold text-sm">Pay by bank transfer</h3>
-          <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
-            <p className="flex justify-between gap-2"><span className="text-slate-500">Account name</span><span className="font-medium text-right select-all">{bankDetails.accountName}</span></p>
-            <p className="flex justify-between gap-2"><span className="text-slate-500">Account number</span><span className="font-mono font-medium select-all">{bankDetails.accountNumber}</span></p>
-            <p className="flex justify-between gap-2"><span className="text-slate-500">Reference</span><span className="font-mono font-medium select-all">{payRef}</span></p>
-            <p className="flex justify-between gap-2"><span className="text-slate-500">Amount</span><span className="font-medium">{money(priceFor(parentAthlete))} {FREQ_TITLE[parentAthlete.frequency].toLowerCase()}</span></p>
-          </div>
-          <button onClick={() => copyText(`${bankDetails.accountNumber}`, 'Account number')} className="w-full text-xs bg-slate-100 text-slate-700 py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Copy size={12} /> Copy account number</button>
-          <div className="text-xs text-slate-600 space-y-1">
-            <p className="font-semibold text-slate-700">Set it and forget it: a free automatic payment</p>
-            <ol className="list-decimal pl-4 space-y-0.5">
-              <li>In your banking app, choose <span className="font-medium">Pay someone</span> or <span className="font-medium">Automatic payment</span>.</li>
-              <li>Enter the account name and number above.</li>
-              <li>Put <span className="font-mono font-medium">{payRef}</span> in the reference, so the club knows it's for {parentAthlete.name}.</li>
-              <li>Set it to repeat <span className="font-medium">{FREQ_TITLE[parentAthlete.frequency].toLowerCase()}</span> for {money(priceFor(parentAthlete))}.</li>
-            </ol>
-            {bankDetails.instructions && <p className="text-slate-500">{bankDetails.instructions}</p>}
-            <p className="text-[11px] text-slate-400">The club ticks off payments as they arrive. If you change how often you pay above, update your automatic payment too.</p>
-          </div>
-        </div>
-      )}
-
-      {showCard && (parentAthlete.hasSubscription ? (
-        <button onClick={openBillingPortal} disabled={busy === 'portal'} className={`w-full ${primaryBtn} bg-slate-800`}>
-          <CreditCard size={14} /> {busy === 'portal' ? 'Opening…' : 'Update card / manage billing'}
-        </button>
-      ) : (
-        <button onClick={startAutoPay} disabled={busy === 'autopay'} className={`w-full ${primaryBtn}`}>
-          <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `${showBank ? 'Or pay by card: ' : 'Set up '}${showBank ? 'set up ' : ''}automatic ${FREQ_TITLE[parentAthlete.frequency].toLowerCase()} card payments`}
-        </button>
-      ))}
-
-      {showCard && (
-        <button onClick={buyPass} disabled={busy === 'pass'} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm shadow-sm disabled:opacity-50">
-          {busy === 'pass' ? 'Opening secure checkout…' : `Buy 10-Session Pass by card (${money(parentSquad.pass)})`}
-        </button>
-      )}
-      {!showCard && showBank && (
-        <p className="text-[11px] text-slate-500 text-center">For a 10-session pass ({money(parentSquad.pass)}), pay the same account with reference <span className="font-mono">{payRef}</span>.</p>
-      )}
-
-      {showCard && (
-        <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
-          <Shield size={11} /> {!remote ? 'Demo mode — no real payments are taken.' : paymentsConnected ? 'Card payments are processed securely by Stripe. Card details never touch this app.' : "Card payments aren't switched on yet."}
-        </p>
-      )}
-      {!cardOn && !bankDetails && <p className="text-xs text-slate-500 text-center">Ask your club how to pay.</p>}
+      {parentFamilies.map(renderFamilyPayment)}
     </div>
   );
 
-  const renderProfile = () => {
-    // The form normally holds an edit-in-progress; until it's filled, show the child's saved details
-    const profileDraft = profileDraftState || profileFromAthlete(parentAthlete);
-    return (
-    <div className="space-y-4">
-      <h2 className="font-bold text-base">Profile & Medical Vault</h2>
-      <div className={`${card} space-y-3 text-sm`}>
-        <h3 className="font-semibold text-sm">Contact Details</h3>
-        <Field label="Phone Number">
-          <input type="tel" className={inputCls} value={profileDraft.phone} onChange={(e) => setProfileDraft({ ...profileDraft, phone: e.target.value })} />
-        </Field>
-        <Field label="Email Address">
-          <input type="email" className={inputCls} value={profileDraft.email} onChange={(e) => setProfileDraft({ ...profileDraft, email: e.target.value })} />
-        </Field>
-        <Field label="Home Address">
-          <textarea rows="2" className={inputCls} value={profileDraft.address} onChange={(e) => setProfileDraft({ ...profileDraft, address: e.target.value })} />
-        </Field>
-        <Field label="Emergency Contact (name & phone)">
-          <input className={inputCls} value={profileDraft.emergency} onChange={(e) => setProfileDraft({ ...profileDraft, emergency: e.target.value })} />
-        </Field>
-      </div>
-      <div className={`${card} space-y-3 text-sm`}>
-        <h3 className="font-semibold text-sm">Medical</h3>
-        <Field label="Food & Medical Allergies">
-          <textarea rows="2" className={inputCls} placeholder="e.g. Peanuts, bee stings — or None" value={profileDraft.allergies} onChange={(e) => setProfileDraft({ ...profileDraft, allergies: e.target.value })} />
-        </Field>
-        <Field label="Medication">
-          <textarea rows="2" className={inputCls} placeholder="Name, dose and where it's kept — or None" value={profileDraft.medication} onChange={(e) => setProfileDraft({ ...profileDraft, medication: e.target.value })} />
-        </Field>
-        <p className="text-[11px] text-slate-400">Medical details are shared with coaches only.</p>
-      </div>
-      <button onClick={saveProfile} className={`w-full ${primaryBtn}`}>Save Details</button>
+  const renderProfile = () => (
+    <div className="space-y-6">
+      <h2 className="font-bold text-base">Profiles & Medical Vault</h2>
+      {parentAthletes.map((a) => {
+        const draft = profileDrafts[a.id] || profileFromAthlete(a);
+        const set = (k) => (e) => setProfileDrafts((prev) => ({ ...prev, [a.id]: { ...draft, [k]: e.target.value } }));
+        const first = a.name.split(' ')[0];
+        return (
+          <section key={a.id} className="space-y-3">
+            <h3 className="font-bold text-sm text-slate-800">{a.name}</h3>
+            <div className={`${card} space-y-3 text-sm`}>
+              <h4 className="font-semibold text-sm">Contact Details</h4>
+              <Field label="Phone Number"><input type="tel" aria-label={`${first}: phone`} className={inputCls} value={draft.phone} onChange={set('phone')} /></Field>
+              <Field label="Email Address"><input type="email" aria-label={`${first}: email`} className={inputCls} value={draft.email} onChange={set('email')} /></Field>
+              <Field label="Home Address"><textarea rows="2" aria-label={`${first}: address`} className={inputCls} value={draft.address} onChange={set('address')} /></Field>
+              <Field label="Emergency Contact (name & phone)"><input aria-label={`${first}: emergency contact`} className={inputCls} value={draft.emergency} onChange={set('emergency')} /></Field>
+            </div>
+            <div className={`${card} space-y-3 text-sm`}>
+              <h4 className="font-semibold text-sm">Medical</h4>
+              <Field label="Food & Medical Allergies">
+                <textarea rows="2" aria-label={`${first}: allergies`} className={inputCls} placeholder="e.g. Peanuts, bee stings — or None" value={draft.allergies} onChange={set('allergies')} />
+              </Field>
+              <Field label="Medication">
+                <textarea rows="2" aria-label={`${first}: medication`} className={inputCls} placeholder="Name, dose and where it's kept — or None" value={draft.medication} onChange={set('medication')} />
+              </Field>
+              <p className="text-[11px] text-slate-400">Medical details are shared with coaches only.</p>
+            </div>
+            <button onClick={() => saveProfile(a)} disabled={!profileDrafts[a.id]} className={`w-full ${primaryBtn}`}>Save {first}'s details</button>
+          </section>
+        );
+      })}
     </div>
   );
-  };
 
   // ----- Finance (treasurer + coach) -----
   const renderFinanceStats = () => (
@@ -1310,29 +1376,68 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     </>
   );
 
-  // A payment that arrived outside the app (usually a bank transfer)
-  const recordPayment = async (a) => {
+  // Demo mode keeps one family per child, so changes go straight onto that child
+  const demoFamilyPatch = (f, patch) => { for (const id of f.athleteIds) updateAthlete(id, patch); };
+
+  // A payment that arrived outside the app (usually a bank transfer), for the whole family
+  const recordPayment = async (f) => {
     const amount = Number(recording?.amount);
     if (!Number.isFinite(amount) || amount <= 0) { showFlash('Enter the amount received'); return; }
     if (!remote) {
-      updateAthlete(a.id, { status: 'paid', lastPaidOn: todayISO });
-      setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Subscription', description: `${a.name} - Bank transfer`, amount, gst: true }]);
+      demoFamilyPatch(f, { status: 'paid', lastPaidOn: todayISO });
+      setTransactions((prev) => [...prev, { id: Date.now(), date: todayISO, type: 'Income', category: 'Subscription', description: `${f.name} - Bank transfer`, amount, gst: true }]);
       setRecording(null);
-      showFlash(`${a.name} marked paid (${money(amount)})`);
+      showFlash(`${f.name} marked paid (${money(amount)})`);
       return;
     }
     setBusy('record');
     try {
-      const res = await api(`/api/athletes/${a.id}/payment`, { method: 'POST', body: { amount } });
-      replaceAthlete(res.athlete);
+      const res = await api(`/api/families/${f.id}/payment`, { method: 'POST', body: { amount } });
+      applyFamily(res.family);
       setTransactions((prev) => [...prev, res.transaction]);
       setRecording(null);
-      showFlash(`${a.name} marked paid (${money(amount)})`);
+      showFlash(`${f.name} marked paid (${money(amount)})`);
     } catch (e) {
       if (!e.signedOut) showFlash(e.message);
     } finally {
       setBusy('');
     }
+  };
+
+  // The club decides how each family pays (only when it offers both card and bank)
+  const changeFamilyMethod = async (f, method) => {
+    if (!remote || method === f.payMethod) return;
+    setBusy(`method-${f.id}`);
+    try {
+      const res = await api(`/api/families/${f.id}/pay-method`, { method: 'PUT', body: { method } });
+      applyFamily(res.family);
+      showFlash(res.cardStopsOn
+        ? `${f.name} now pays by bank. Their card payments stop after ${fmtShort(res.cardStopsOn)}.`
+        : `${f.name} now pays by ${method === 'bank' ? 'bank transfer' : 'card'}`);
+    } catch (e) {
+      if (!e.signedOut) showFlash(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const changeFamilyStatus = async (f, status) => {
+    if (!remote) { demoFamilyPatch(f, { status }); return; }
+    setBusy(`status-${f.id}`);
+    try {
+      const res = await api(`/api/families/${f.id}/status`, { method: 'PUT', body: { status } });
+      applyFamily(res.family);
+    } catch (e) {
+      if (!e.signedOut) showFlash(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const familyHow = (f) => {
+    if (f.payMethod === 'bank') return `bank · ref ${f.reference}`;
+    if (f.hasSubscription) return `card auto-pay${f.cardStopping ? ' (stopping)' : ''}`;
+    return 'card · not set up yet';
   };
 
   const renderReconciliation = () => (
@@ -1341,51 +1446,69 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <h3 className="font-semibold text-sm">Payment Reconciliation</h3>
         {syncButton}
       </div>
-      {athletes.map((a) => (
-        <div key={a.id} className="py-2 border-b border-slate-50 text-sm">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="font-medium">{a.name}</p>
-              <p className="text-xs text-slate-400">{squadById(a.squadId)?.name} · {methodFor(a) === 'bank' || (!a.autoDebit && !bothOffered && bankDetails) ? `bank · ref ${a.payRef || a.id}` : a.autoDebit ? `card auto-pay ${a.frequency}` : methodFor(a) === 'card' ? 'card · not set up yet' : `ref ${a.payRef || a.id}`}{a.lastPaidOn ? ` · last paid ${fmtShort(a.lastPaidOn)}` : ''}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {(!a.hasSubscription || methodFor(a) === 'bank') && (
-                <button onClick={() => setRecording(recording?.id === a.id ? null : { id: a.id, amount: String(priceFor(a) || '') })} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-medium">Record payment</button>
-              )}
-              {a.status === 'overdue' && (
-                <button onClick={() => setReminderFor(reminderFor === a.id ? null : a.id)} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded font-medium">Remind</button>
-              )}
-              <span className={`px-2 py-1 rounded text-xs font-semibold ${a.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                {a.status.toUpperCase()}
+      <p className="text-[11px] text-slate-400 mb-2">One line per family: brothers and sisters share one payment.</p>
+      {[...families].sort((x, y) => x.name.localeCompare(y.name)).map((f) => {
+        const kids = membersOf(f);
+        const first = kids[0];
+        return (
+          <div key={f.id} className="py-2 border-b border-slate-50 text-sm">
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <p className="font-medium">{f.name} <span className="text-xs text-slate-400 font-normal">· {money(f.total)}/{FREQ_LABEL[f.frequency]}</span></p>
+                <p className="text-xs text-slate-500">{kids.map((k) => `${k.name.split(' ')[0]} (${squadById(k.squadId)?.name || 'no ' + lc(W.group)})`).join(', ')}</p>
+                <p className="text-xs text-slate-400">{familyHow(f)}{f.lastPaidOn ? ` · last paid ${fmtShort(f.lastPaidOn)}` : ''}</p>
+              </div>
+              <span className={`px-2 py-1 rounded text-xs font-semibold shrink-0 ${f.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                {f.status.toUpperCase()}
               </span>
             </div>
-          </div>
-          {recording?.id === a.id && (
-            <form onSubmit={(e) => { e.preventDefault(); recordPayment(a); }} className="mt-2 p-3 bg-emerald-50 rounded-lg space-y-2">
-              <p className="text-xs text-emerald-900">Money received from {a.parent || a.name}{a.payRef ? ` (reference ${a.payRef})` : ''}:</p>
-              <div className="flex gap-2">
-                <input inputMode="decimal" aria-label={`Amount received for ${a.name}`} value={recording.amount} onChange={(e) => setRecording({ ...recording, amount: e.target.value })} className={`${inputCls} mt-0 flex-1`} />
-                <button type="submit" disabled={busy === 'record'} className="px-3 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{busy === 'record' ? 'Saving…' : 'Mark paid'}</button>
-                <button type="button" onClick={() => setRecording(null)} className="px-3 bg-white text-slate-600 rounded-lg text-xs font-semibold border border-slate-200">Cancel</button>
-              </div>
-              <p className="text-[11px] text-emerald-800">Marks them paid and adds the income to your books.</p>
-            </form>
-          )}
-          {reminderFor === a.id && (
-            <div className="mt-2 p-3 bg-slate-50 rounded-lg space-y-2">
-              <p className="text-xs text-slate-500 whitespace-pre-line">{fillTemplate(smsTemplate, a)}</p>
-              <div className="flex gap-2">
-                <a href={`sms:${phoneDigits(a.phone)}?&body=${encodeURIComponent(fillTemplate(smsTemplate, a))}`} className="flex-1 text-center text-xs bg-indigo-600 text-white py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Phone size={12} /> SMS</a>
-                <a href={`mailto:${mailAddress(a.email)}?subject=${encodeURIComponent('Overdue payment')}&body=${encodeURIComponent(fillTemplate(emailTemplate, a))}`} className="flex-1 text-center text-xs bg-indigo-600 text-white py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Mail size={12} /> Email</a>
-                <button onClick={() => copyText(fillTemplate(smsTemplate, a), 'Reminder')} className="flex-1 text-xs bg-slate-200 text-slate-700 py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Copy size={12} /> Copy</button>
-              </div>
-              {copyFallback && copyFallback.label === 'Reminder' && (
-                <textarea id="reminder-copy-fallback" readOnly rows="3" className={`${inputCls} text-xs`} value={copyFallback.text} onFocus={(e) => e.target.select()} />
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              {remote && bothOffered && (
+                <label className="text-xs text-slate-500 flex items-center gap-1">
+                  Pays by
+                  <select aria-label={`${f.name}: how they pay`} value={f.payMethod} disabled={busy === `method-${f.id}`} onChange={(e) => changeFamilyMethod(f, e.target.value)} className="text-xs border border-slate-200 rounded px-1.5 py-1 bg-white">
+                    <option value="card">Card (Stripe)</option>
+                    <option value="bank">Bank transfer</option>
+                  </select>
+                </label>
+              )}
+              {(!f.hasSubscription || f.payMethod === 'bank') && (
+                <button onClick={() => setRecording(recording?.id === f.id ? null : { id: f.id, amount: String(f.total || '') })} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-medium">Record payment</button>
+              )}
+              {f.status === 'paid' && !f.hasSubscription && (
+                <button onClick={() => changeFamilyStatus(f, 'overdue')} disabled={busy === `status-${f.id}`} className="text-xs bg-rose-50 text-rose-700 px-2 py-1 rounded font-medium">Mark overdue</button>
+              )}
+              {f.status === 'overdue' && first && (
+                <button onClick={() => setReminderFor(reminderFor === f.id ? null : f.id)} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded font-medium">Remind</button>
               )}
             </div>
-          )}
-        </div>
-      ))}
+            {recording?.id === f.id && (
+              <form onSubmit={(e) => { e.preventDefault(); recordPayment(f); }} className="mt-2 p-3 bg-emerald-50 rounded-lg space-y-2">
+                <p className="text-xs text-emerald-900">Money received from the {f.name} (reference {f.reference}):</p>
+                <div className="flex gap-2">
+                  <input inputMode="decimal" aria-label={`Amount received from ${f.name}`} value={recording.amount} onChange={(e) => setRecording({ ...recording, amount: e.target.value })} className={`${inputCls} mt-0 flex-1`} />
+                  <button type="submit" disabled={busy === 'record'} className="px-3 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{busy === 'record' ? 'Saving…' : 'Mark paid'}</button>
+                  <button type="button" onClick={() => setRecording(null)} className="px-3 bg-white text-slate-600 rounded-lg text-xs font-semibold border border-slate-200">Cancel</button>
+                </div>
+                <p className="text-[11px] text-emerald-800">Marks the whole family paid and adds the income to your books.</p>
+              </form>
+            )}
+            {reminderFor === f.id && first && (
+              <div className="mt-2 p-3 bg-slate-50 rounded-lg space-y-2">
+                <p className="text-xs text-slate-500 whitespace-pre-line">{fillFamilyTemplate(smsTemplate, f)}</p>
+                <div className="flex gap-2">
+                  <a href={`sms:${phoneDigits(first.phone)}?&body=${encodeURIComponent(fillFamilyTemplate(smsTemplate, f))}`} className="flex-1 text-center text-xs bg-indigo-600 text-white py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Phone size={12} /> SMS</a>
+                  <a href={`mailto:${mailAddress(first.email)}?subject=${encodeURIComponent('Overdue payment')}&body=${encodeURIComponent(fillFamilyTemplate(emailTemplate, f))}`} className="flex-1 text-center text-xs bg-indigo-600 text-white py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Mail size={12} /> Email</a>
+                  <button onClick={() => copyText(fillFamilyTemplate(smsTemplate, f), 'Reminder')} className="flex-1 text-xs bg-slate-200 text-slate-700 py-2 rounded-lg font-semibold flex items-center justify-center gap-1"><Copy size={12} /> Copy</button>
+                </div>
+                {copyFallback && copyFallback.label === 'Reminder' && (
+                  <textarea id="reminder-copy-fallback" readOnly rows="3" className={`${inputCls} text-xs`} value={copyFallback.text} onFocus={(e) => e.target.select()} />
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -1498,13 +1621,13 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                 </select>
               </Field>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Pays">
+                <Field label="Family pays">
                   <select className={inputCls} value={athleteDraft.frequency} onChange={(e) => setAthleteDraft({ ...athleteDraft, frequency: e.target.value })}>
                     {Object.keys(FREQ_TITLE).map((f) => <option key={f} value={f}>{FREQ_TITLE[f]}</option>)}
                   </select>
                 </Field>
                 {bothOffered && (
-                  <Field label="Pays by">
+                  <Field label="Family pays by">
                     <select className={inputCls} value={athleteDraft.payMethod || ''} onChange={(e) => setAthleteDraft({ ...athleteDraft, payMethod: e.target.value })}>
                       {!athleteDraft.payMethod && <option value="">Not chosen yet</option>}
                       <option value="bank">Bank transfer</option>
@@ -1512,14 +1635,14 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                     </select>
                   </Field>
                 )}
-                <Field label={remote && a.hasSubscription ? 'Status (from Stripe)' : 'Status'}>
+                <Field label={remote && a.hasSubscription ? 'Family status (from Stripe)' : 'Family status'}>
                   <select className={inputCls} disabled={remote && a.hasSubscription} value={athleteDraft.status} onChange={(e) => setAthleteDraft({ ...athleteDraft, status: e.target.value })}>
                     <option value="paid">Paid</option>
                     <option value="overdue">Overdue</option>
                   </select>
                 </Field>
               </div>
-              <p className="text-xs text-slate-500">Price: {money(squadById(athleteDraft.squadId)?.[athleteDraft.frequency])}/{FREQ_LABEL[athleteDraft.frequency]}</p>
+              <p className="text-xs text-slate-500">Price for {a.name.split(' ')[0]}: {money(squadById(athleteDraft.squadId)?.[athleteDraft.frequency])}/{FREQ_LABEL[athleteDraft.frequency]}. How often and how the family pays applies to all their children.</p>
               {athleteDraft.squadId !== a.squadId && <p className="text-[11px] text-amber-700">Moving {lc(W.groups)} clears their regular training days so the parent can pick new ones.</p>}
 
               <Field label="Parent / Guardian"><input className={inputCls} value={athleteDraft.parent} onChange={(e) => setAthleteDraft({ ...athleteDraft, parent: e.target.value })} /></Field>
@@ -2150,16 +2273,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     }
     return (
       <div className="space-y-4">
-        {parentAthletes.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Choose child">
-            {parentAthletes.map((c) => (
-              <button key={c.id} role="tab" aria-selected={c.id === parentAthlete.id} onClick={() => setSelectedChildId(c.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 ${c.id === parentAthlete.id ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
-                {c.name.split(' ')[0]}
-              </button>
-            ))}
-          </div>
-        )}
         {render()}
         {activeTab === 'settings' && renderAccount()}
       </div>

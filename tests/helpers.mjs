@@ -165,7 +165,7 @@ export function fakeStripe() {
     checkout: { sessions: { create: rec('checkout.sessions.create', { url: 'https://checkout.stripe.test/session' }), retrieve: rec('checkout.sessions.retrieve', {}) } },
     billingPortal: { sessions: { create: rec('billingPortal.sessions.create', { url: 'https://billing.stripe.test/portal' }) } },
     subscriptions: {
-      retrieve: rec('subscriptions.retrieve', (id) => ({ id, status: 'active', current_period_end: 1893456000, metadata: {}, items: { data: [{ id: 'si_1', price: { product: 'prod_platform' } }] } })),
+      retrieve: rec('subscriptions.retrieve', (id) => ({ id, status: 'active', current_period_end: 1893456000, metadata: {}, items: { data: [{ id: 'si_1', quantity: 1, price: { id: 'price_old', product: 'prod_platform' } }] } })),
       update: rec('subscriptions.update', (id) => ({ id, status: 'active', current_period_end: 1893456000 })),
       cancel: rec('subscriptions.cancel', {}),
     },

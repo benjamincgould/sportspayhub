@@ -104,10 +104,12 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
   - **Bank transfer:** works without Stripe and has no fees. You enter your account name and number once. Each request shows them with a reference (like `INV00012`), and you tap **Mark paid** when the money arrives.
 - **Charge a club any time:** in the Owner Console, open a club's **Price & charges**, enter an amount and what it's for, and tap **Send payment request**. The club's coaches get an email with the ways to pay (14 days to pay), and it shows in their Settings. You can mark it paid, or cancel it until it's paid.
 - **Changing a paying club's price** moves their subscription to the new price from their next bill, with no extra charge for the change itself.
-- **Parents pay their club**, and each club chooses how in Settings → **How Parents Pay** (the coach or the treasurer can change it):
-  - **Card, through Stripe:** into the club's own Stripe account (a coach taps **Connect Stripe** in Settings). Automatic, and Stripe keeps a small fee from each payment.
-  - **Bank transfer:** no fees. Parents see the club's account, a reference for their child (like `LEOPARKER12`) and steps to set up a free automatic payment in their banking app. The treasurer or coach taps **Record payment** on the Home screen as money arrives; that marks the family paid and adds the income to the club's books.
-  - Or **both**. Then each child is paid for one way, chosen per child: a parent can pay for one child by bank and another by card (on their Payments page). The coach or treasurer can also set it in the child's record (**Pays by**). Moving a child from card to bank stops their card payments at the end of the period already paid, so nobody pays twice.
+- **Parents pay their club as a family.** Brothers and sisters (children linked to the same parent) share one payment, one reference and one schedule, even when they're in different groups at different prices. The parent sees one Payments page listing each child, their group and price, and the family total.
+  - **How often:** the parent chooses weekly, fortnightly or monthly for the whole family (staff can change it too). Card payments switch over straight away, with unused time credited.
+  - **How they pay is the club's decision, not the parent's.** In Settings → **How Parents Pay** the coach or treasurer turns on card, bank transfer or both. With both, they pick what new families use, and can change any family on the Home screen (**Pays by** in Payment Reconciliation).
+  - **Card, through Stripe:** into the club's own Stripe account (a coach taps **Connect Stripe** in Settings). One automatic payment covers all the children. Stripe keeps a small fee from each payment.
+  - **Bank transfer:** no fees. Parents see the club's account, their family reference (like `PARKERF12`) and steps to set up one free automatic payment in their banking app. The treasurer or coach taps **Record payment** next to the family as money arrives; that marks the family paid and adds the income to the club's books.
+  - Moving a family from card to bank stops their card payments at the end of the period already paid, so nobody pays twice.
 
 ## Day-to-day admin
 
