@@ -97,7 +97,8 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 
 ## How the money works
 
-- **Clubs pay you** a monthly fee into your Stripe account: **$49 NZD** by default (`PLATFORM_PRICE_NZD`), or a price you set for that club.
+- **Clubs pay you** a monthly fee into your Stripe account (Stripe's fee comes out of what you receive, so clubs pay exactly your price): **$49 NZD** by default (`PLATFORM_PRICE_NZD`), or a price you set for that club.
+- **Parents pay their club:** a coach taps **Connect Stripe** in Settings so the club gets its own Stripe account. Parents pay by card through your platform's Stripe account, and the **full amount** is passed straight on to the club's account; Stripe's fee comes out of *your* balance, not the club's. The club's name appears on the parent's card statement. If you don't want to pay those fees either, clubs can simply not connect Stripe and take bank transfers.
 - **Set-up fees:** set one per club (or a default for every new club with `PLATFORM_SETUP_FEE_NZD`). It's added once to the club's first subscription payment. For a club you've given free access, it's sent as a payment request straight away.
 - **How clubs pay you** (Owner Console → **Payment details**): card through Stripe, bank transfer, or both.
   - **Card:** needs Stripe. Charges are marked paid automatically, and Stripe pays the money into the bank account you gave Stripe.
