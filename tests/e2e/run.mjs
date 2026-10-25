@@ -208,7 +208,7 @@ try {
   await ownerPage.getByLabel('Parker family: how they pay').selectOption('bank');
   await ownerPage.getByText('Parker family now pays by bank transfer').waitFor();
   await ownerPage.getByRole('button', { name: 'Settings' }).first().click();
-  await ownerPage.getByText('How Parents Pay').waitFor();
+  await ownerPage.getByText('How Parents Pay: Stripe or Bank Transfer').waitFor();
   await ownerPage.getByText('Team & Family Access').waitFor();
   // Parent: the same family now sees the bank details
   await ownerPage.getByRole('button', { name: 'Parent', exact: true }).click();
@@ -266,9 +266,9 @@ try {
 
   // ---------- The club switches to bank transfer ----------
   await coach.getByRole('button', { name: 'Settings' }).click();
-  const methodsCard = coach.locator('form', { hasText: 'How Parents Pay' });
-  await methodsCard.getByLabel(/Card, through Stripe/).uncheck();
-  await methodsCard.getByLabel(/Bank transfer/).check();
+  const methodsCard = coach.locator('form[aria-label="Payment options"]');
+  await methodsCard.getByText('Right now: Card through Stripe only').waitFor();
+  await methodsCard.getByLabel(/Bank transfer only/).check();
   await methodsCard.getByLabel('Account name').fill('Riverside Rugby Club Inc');
   await methodsCard.getByLabel('Account number').fill('03 1234 0123456 00');
   await methodsCard.getByRole('button', { name: 'Save payment options' }).click();
@@ -291,8 +291,8 @@ try {
   step('The coach records the bank payment: marked paid, and the income goes in the books');
 
   await coach.getByRole('button', { name: 'Settings' }).click();
-  await coach.locator('form', { hasText: 'How Parents Pay' }).getByLabel(/Card, through Stripe/).check();
-  await coach.locator('form', { hasText: 'How Parents Pay' }).getByRole('button', { name: 'Save payment options' }).click();
+  await methodsCard.getByLabel(/Both: you choose for each family/).check();
+  await methodsCard.getByRole('button', { name: 'Save payment options' }).click();
   await coach.getByText('Payment options saved').waitFor();
   await parent.reload();
   await parent.getByRole('button', { name: 'Payments' }).click();
@@ -301,9 +301,11 @@ try {
   if (await parent.getByText(/How will you pay/).count()) fail('parents must not be able to choose card or bank');
   if (await parent.getByRole('button', { name: /card payments/ }).count()) fail('with bank set for this family, the card buttons should be hidden');
   await parent.getByText('Family total').waitFor();
-  await coach.getByRole('button', { name: 'Home' }).click();
-  await coach.getByLabel('Fox family: how they pay').selectOption('card');
+  // Settings lists each family with its own choice
+  await methodsCard.getByLabel('Fox family: pays by').selectOption('card');
   await coach.getByText('Fox family now pays by card').waitFor();
+  await coach.screenshot({ path: `${here}/coach-payment-options.png` });
+  await coach.getByRole('button', { name: 'Home' }).click();
   await parent.reload();
   await parent.getByRole('button', { name: 'Payments' }).click();
   await parent.getByText(/Your club has set your family to pay by card/).waitFor();

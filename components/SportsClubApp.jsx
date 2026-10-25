@@ -2152,9 +2152,10 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   );
 
   // How parents pay the club (coach and treasurer)
+  const sortedFamilies = [...families].sort((x, y) => x.name.localeCompare(y.name));
   const renderPaymentMethods = () => (remote
-    ? <PaymentMethodsCard club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} />
-    : <PaymentMethodsCard demo club={{ ...club, payments: demoPayments }} showFlash={showFlash} onClubChange={(c) => setDemoPayments(c.payments)} />);
+    ? <PaymentMethodsCard key={JSON.stringify(club.payments || {})} club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} families={sortedFamilies} onFamilyMethod={changeFamilyMethod} canConnectStripe={isCoach} />
+    : <PaymentMethodsCard demo club={{ ...club, payments: demoPayments }} showFlash={showFlash} onClubChange={(c) => setDemoPayments(c.payments)} families={sortedFamilies} onFamilyMethod={changeFamilyMethod} canConnectStripe={isCoach} />);
 
   // Server mode: account security for everyone, plus team & family access for staff
   const renderAccount = () => (remote
@@ -2596,6 +2597,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const renderCoachSettings = () => (
     <div className="space-y-4">
       <h2 className="font-bold text-base">Settings</h2>
+      {renderPaymentMethods()}
       {!remote && (
         <div className={`${card} text-sm space-y-1`}>
           <h3 className="font-semibold text-sm">Club Branding & Subscription</h3>
@@ -2603,7 +2605,6 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         </div>
       )}
       {remote && <ClubSettings club={club} showFlash={showFlash} onClubChange={(c) => updateUser?.({ ...me, club: c })} onRefresh={loadFromServer} />}
-      {renderPaymentMethods()}
       {renderTeamAccess()}
       {renderFinanceSettings()}
       {renderAccount()}

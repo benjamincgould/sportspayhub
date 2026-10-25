@@ -253,26 +253,39 @@ export function ClubSettings({ club, onClubChange, showFlash, onRefresh }) {
 }
 
 // ---------- How parents pay the club (coach and treasurer) ----------
+// The first thing in Settings: card through Stripe, bank transfer, or both (then chosen per family)
 
-export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false }) {
+const PAY_MODES = [
+  ['bank', 'Bank transfer only', 'No fees. Parents pay into the club\'s account with their family reference; you tick payments off as they arrive.'],
+  ['card', 'Card only (Stripe)', 'Automatic: paid and marked paid by itself. Stripe keeps about 2.7% + 30c from each payment.'],
+  ['both', 'Both: you choose for each family', 'Some families pay by card, others by bank transfer. You pick for each family below.'],
+];
+
+export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false, families = [], onFamilyMethod = null, canConnectStripe = false }) {
   const p = club.payments || {};
+  const savedMode = p.card !== false && p.bank ? 'both' : p.bank ? 'bank' : 'card';
   const [form, setForm] = useState({
-    card: p.card !== false, bank: Boolean(p.bank), defaultMethod: p.defaultMethod === 'card' ? 'card' : 'bank',
+    mode: savedMode, defaultMethod: p.defaultMethod === 'card' ? 'card' : 'bank',
     bankAccountName: p.bank?.accountName || '', bankAccountNumber: p.bank?.accountNumber || '', instructions: p.bank?.instructions || '',
   });
   const [saving, setSaving] = useState(false);
+  const card = form.mode !== 'bank';
+  const bank = form.mode !== 'card';
+  const dirty = form.mode !== savedMode || (bank && (form.bankAccountName !== (p.bank?.accountName || '') || form.bankAccountNumber !== (p.bank?.accountNumber || '') || form.instructions !== (p.bank?.instructions || '')))
+    || (form.mode === 'both' && form.defaultMethod !== (p.defaultMethod === 'card' ? 'card' : 'bank'));
 
   const save = async (e) => {
     e.preventDefault();
+    const body = { card, bank, defaultMethod: form.defaultMethod, bankAccountName: form.bankAccountName, bankAccountNumber: form.bankAccountNumber, instructions: form.instructions };
     if (demo) { // the sales demo: change the pretend club only, nothing is sent
-      const bank = form.bank ? { accountName: form.bankAccountName || `${club.name} Inc`, accountNumber: form.bankAccountNumber || '12-3456-0123456-00', instructions: form.instructions } : null;
-      onClubChange({ ...club, payments: { ...club.payments, card: form.card, bank, defaultMethod: form.defaultMethod } });
+      const details = bank ? { accountName: form.bankAccountName || `${club.name} Inc`, accountNumber: form.bankAccountNumber || '12-3456-0123456-00', instructions: form.instructions } : null;
+      onClubChange({ ...club, payments: { ...club.payments, card, bank: details, defaultMethod: form.defaultMethod } });
       showFlash('Payment options saved (demo)');
       return;
     }
     setSaving(true);
     try {
-      const res = await api('/api/club/payment-methods', { method: 'PUT', body: form });
+      const res = await api('/api/club/payment-methods', { method: 'PUT', body });
       onClubChange({ ...club, payments: { ...club.payments, ...res.payments } });
       showFlash('Payment options saved');
     } catch (err) {
@@ -282,29 +295,37 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false
     }
   };
 
+  const summary = savedMode === 'both' ? 'Card (Stripe) and bank transfer, chosen for each family' : savedMode === 'bank' ? 'Bank transfer only' : 'Card through Stripe only';
+
   return (
-    <form onSubmit={save} className={card}>
-      <h3 className="font-semibold text-sm flex items-center gap-1.5"><CreditCard size={14} /> How Parents Pay</h3>
-      <p className="text-xs text-slate-500">You decide how each family pays; parents can't change it. Brothers and sisters share one payment and one reference.</p>
+    <form onSubmit={save} className="bg-white p-4 rounded-xl shadow-sm border-2 border-indigo-100 space-y-3" aria-label="Payment options">
+      <div>
+        <h3 className="font-bold text-base flex items-center gap-1.5"><CreditCard size={16} /> How Parents Pay: Stripe or Bank Transfer</h3>
+        <p className="text-xs text-slate-500">The club decides; parents can't change it. Brothers and sisters share one payment and one reference.</p>
+        <p className="text-xs mt-1"><span className="text-slate-500">Right now:</span> <span className="font-semibold text-slate-800">{summary}</span></p>
+      </div>
 
-      <label className="flex items-start gap-2">
-        <input type="checkbox" className="mt-1" checked={form.card} onChange={(e) => setForm({ ...form, card: e.target.checked })} />
-        <span className="text-xs">
-          <span className="font-semibold text-sm text-slate-800">Card, through Stripe</span>
-          <span className="block text-slate-500">Automatic and marked paid by itself. Stripe keeps a small fee from each payment (about 2.7% + 30c).{!club.payments?.connected ? ' Needs your club\'s Stripe account connected (below).' : ''}</span>
-        </span>
-      </label>
+      <div className="grid gap-2 md:grid-cols-3" role="radiogroup" aria-label="How parents pay">
+        {PAY_MODES.map(([mode, label, help]) => (
+          <label key={mode} className={`p-3 rounded-lg border-2 cursor-pointer ${form.mode === mode ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}>
+            <span className="flex items-center gap-2">
+              <input type="radio" name="pay-mode" value={mode} checked={form.mode === mode} onChange={() => setForm({ ...form, mode })} />
+              <span className="font-semibold text-sm text-slate-800">{label}</span>
+            </span>
+            <span className="block text-[11px] text-slate-500 mt-1">{help}</span>
+          </label>
+        ))}
+      </div>
 
-      <label className="flex items-start gap-2">
-        <input type="checkbox" className="mt-1" checked={form.bank} onChange={(e) => setForm({ ...form, bank: e.target.checked })} />
-        <span className="text-xs">
-          <span className="font-semibold text-sm text-slate-800">Bank transfer</span>
-          <span className="block text-slate-500">No fees. Parents see your account and a reference for their family, and can set up a free automatic payment in their banking app. You tick payments off as they arrive.</span>
-        </span>
-      </label>
+      {card && !p.connected && (
+        <p className="text-xs text-amber-800 bg-amber-50 p-2 rounded-lg">
+          Card payments need the club's own Stripe account connected. {canConnectStripe ? 'Use "Connect Stripe" further down this page; it takes a few minutes.' : 'Ask a coach to connect it (Settings → Connect Stripe).'}
+        </p>
+      )}
 
-      {form.bank && (
-        <div className="space-y-2 pl-6">
+      {bank && (
+        <div className="space-y-2 p-3 bg-slate-50 rounded-lg">
+          <p className="text-xs font-semibold text-slate-700">The club's bank account (shown to parents who pay by bank)</p>
           <label className="block text-xs text-slate-500">Account name
             <input required maxLength={80} value={form.bankAccountName} onChange={(e) => setForm({ ...form, bankAccountName: e.target.value })} placeholder="e.g. Riverside Rugby Club Inc" className={field} />
           </label>
@@ -317,18 +338,34 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false
         </div>
       )}
 
-      {form.card && form.bank && (
-        <label className="block text-xs text-slate-500">New families pay by
+      {form.mode === 'both' && (
+        <label className="block text-xs text-slate-500">New families start on
           <select value={form.defaultMethod} onChange={(e) => setForm({ ...form, defaultMethod: e.target.value })} className={field}>
             <option value="bank">Bank transfer</option>
             <option value="card">Card (Stripe)</option>
           </select>
-          <span className="block text-[11px] text-slate-400 mt-1">You can change any family in Finance → Payment Reconciliation.</span>
         </label>
       )}
 
-      {!form.card && !form.bank && <p className="text-xs text-amber-700">Choose at least one way to pay.</p>}
-      <button type="submit" disabled={saving || (!form.card && !form.bank)} className={`w-full ${btn}`}>{saving ? 'Saving…' : 'Save payment options'}</button>
+      <button type="submit" disabled={saving || !dirty} className={`w-full ${btn}`}>{saving ? 'Saving…' : dirty ? 'Save payment options' : 'Saved'}</button>
+
+      {savedMode === 'both' && onFamilyMethod && (
+        <div className="pt-3 border-t border-slate-100 space-y-1">
+          <p className="text-xs font-semibold text-slate-700">Each family pays by</p>
+          {families.length === 0 && <p className="text-xs text-slate-400">No families yet.</p>}
+          {families.map((f) => (
+            <div key={f.id} className="flex justify-between items-center gap-2 py-1.5 border-b border-slate-50">
+              <span className="text-sm min-w-0 truncate">{f.name}<span className="text-xs text-slate-400"> · {f.reference}</span></span>
+              <select aria-label={`${f.name}: pays by`} value={f.payMethod} onChange={(e) => onFamilyMethod(f, e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white shrink-0">
+                <option value="card">Card (Stripe)</option>
+                <option value="bank">Bank transfer</option>
+              </select>
+            </div>
+          ))}
+          <p className="text-[11px] text-slate-400">Moving a family from card to bank stops their card payments at the end of the period they've already paid. This is also on the Home screen (Payment Reconciliation).</p>
+        </div>
+      )}
+      {savedMode !== 'both' && <p className="text-[11px] text-slate-400">Choose "Both" to pick card or bank for each family.</p>}
     </form>
   );
 }
