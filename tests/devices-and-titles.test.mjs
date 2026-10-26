@@ -186,6 +186,7 @@ test('when an invite email can\'t be sent, the inviter is told why and gets the 
     assert.equal(r.status, 200, r.text);
     assert.equal(r.json.emailed, false);
     assert.match(r.json.emailProblem, /verify a domain you own/);
+    assert.match(r.json.emailProblem, /GMAIL_APP_PASSWORD/, 'points to the free Gmail option');
     assert.match(r.json.inviteUrl, /#\/invite\//, 'the owner gets the link');
     const dadId = (await owner.get(`/api/owner/clubs/${clubId}/people`)).json.find((u) => u.email === 'dad@device.test').id;
     const again = await owner.post(`/api/owner/clubs/${clubId}/people/${dadId}/invite`);

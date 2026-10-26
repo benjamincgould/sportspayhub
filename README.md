@@ -120,11 +120,15 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
 
 ## If invite emails don't arrive
 
-On Resend's free plan, emails sent from `onboarding@resend.dev` only go to the email address you signed up to Resend with: everyone else's are refused. The app now says so when it happens and shows you the invite link to send by text instead. To email anyone:
+On Resend's free plan, emails from `onboarding@resend.dev` only reach the address you signed up to Resend with. The app says so when it happens and shows you the invite link to send by text. Two ways to fix it:
 
-1. Get a domain you own (e.g. `sportspayhub.co.nz`, about $20–30 a year).
-2. In Resend → **Domains**, add it and copy the DNS records it shows into your domain provider. Wait until Resend says **Verified**.
-3. In Vercel → Settings → Environment Variables, set `EMAIL_FROM` to e.g. `SportsPayHub <noreply@sportspayhub.co.nz>`, then **Redeploy**.
+**Free: send through Gmail** (about 500 emails a day, plenty for clubs)
+1. Make (or use) a Gmail account for the app, e.g. `sportspayhub.app@gmail.com`.
+2. In that Google account: **Security → 2-Step Verification** (turn it on), then search **App passwords**, create one called "SportsPayHub" and copy the 16 letters.
+3. In Vercel → Settings → Environment Variables add `GMAIL_USER` (the Gmail address) and `GMAIL_APP_PASSWORD` (the 16 letters). Optionally set `EMAIL_FROM` to `SportsPayHub <the same gmail address>` so emails show your app's name.
+4. **Redeploy.** Gmail is used ahead of Resend while these are set.
+
+**Or with a domain you own:** add it in Resend → Domains, add the DNS records it shows, wait for **Verified**, set `EMAIL_FROM` to e.g. `SportsPayHub <noreply@yourdomain>`, and redeploy.
 
 ## Day-to-day admin
 
