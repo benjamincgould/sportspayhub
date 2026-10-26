@@ -510,7 +510,7 @@ function OwnerSetupScreen({ onBack }) {
     <AuthShell title="Create the owner account" subtitle="One-time set-up for the person running the platform" onBack={onBack}>
       {done ? (
         <div className="space-y-3">
-          <Alert tone="info">{done.emailed ? `We've emailed ${form.email} a link to choose your password.` : 'Email isn\'t set up, so use this link to choose your password:'}</Alert>
+          <Alert tone="info">{done.emailed ? `We've emailed ${form.email} a link to choose your password.` : `The email couldn't be sent${done.emailProblem ? `: ${done.emailProblem}` : '.'} Use this link to choose your password instead:`}</Alert>
           {done.inviteUrl && <code className="block p-2 bg-slate-100 rounded-lg text-xs break-all select-all">{done.inviteUrl}</code>}
           <p className="text-sm text-slate-600">After choosing a password you'll set up two-step verification. Then remove OWNER_SETUP_SECRET from your settings.</p>
         </div>
@@ -865,7 +865,7 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
     e.preventDefault();
     try {
       const res = await api('/api/users/invite', { method: 'POST', body: form });
-      setResult({ email: form.email, url: res.inviteUrl, emailed: res.emailed, linked: res.linked });
+      setResult({ email: form.email, url: res.inviteUrl, emailed: res.emailed, linked: res.linked, problem: res.emailProblem });
       setForm(null);
       load();
     } catch (err) {
@@ -876,7 +876,7 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
   const linkFor = async (u) => {
     try {
       const res = await api(`/api/users/${u.id}/reset-link`, { method: 'POST' });
-      setResult({ email: u.email, url: res.url, emailed: res.emailed, kind: res.kind });
+      setResult({ email: u.email, url: res.url, emailed: res.emailed, kind: res.kind, problem: res.emailProblem });
     } catch (err) { showFlash(err.message); }
   };
 
@@ -988,17 +988,19 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
       )}
 
       {result && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2 text-xs text-emerald-900">
-          {result.linked ? <p>{result.email} already has an account, so the {words.members.toLowerCase()} were added to it. Nothing else to do.</p> : !result.url ? (
+        <div className={`p-3 border rounded-lg space-y-2 text-xs ${result.emailed || result.linked ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+          {result.linked ? <p>{result.email} already has an account, so the {words.members.toLowerCase()} were added to it. Nothing else to do.</p> : result.emailed ? (
             <p>
               {result.kind === 'reset'
                 ? `We've emailed ${result.email} a link to choose a new password. For their safety, only they receive it. It works for 1 hour.`
-                : `We've emailed ${result.email} their invite. It works for 3 days.`}
-              {!result.emailed && ' If it doesn\'t arrive, check the email address is right.'}
+                : `We've emailed ${result.email} their invite. It works for 3 days. If it hasn't arrived in a few minutes, ask them to check their junk folder.`}
             </p>
+          ) : !result.url ? (
+            <p><b>The email to {result.email} couldn't be sent.</b> {result.problem || 'Check the email set-up in Vercel.'}</p>
           ) : (
             <>
-              <p>{`Email isn't set up yet, so send ${result.email} this link yourself. It works once, for 3 days.`}</p>
+              <p><b>The invite email to {result.email} couldn't be sent.</b> {result.problem}</p>
+              <p>{`Send them this link yourself instead (by text or message). It works once, for 3 days.`}</p>
               <div className="flex gap-2 items-center">
                 <code className="flex-1 p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{result.url}</code>
                 <button type="button" onClick={async () => setCopied(await copyToClipboard(result.url))} className="p-2 bg-white rounded border border-emerald-200" aria-label="Copy link">{copied ? <Check size={14} /> : <Copy size={14} />}</button>

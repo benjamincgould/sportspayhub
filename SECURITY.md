@@ -71,3 +71,7 @@ Failed email sends also no longer write full email addresses into the server log
 6. **Supabase settings matter:** public sign-ups off, IP address forwarding on, leaked-password protection on. See README.
 7. **Trust boundaries by design:** coaches see everything in their club; the owner can delete clubs; anyone with both the database and the key can read everything. Keep those accounts few, with two-step on.
 8. **Legal:** terms of service, a privacy policy meeting the NZ Privacy Act 2020, and a data agreement with each club.
+
+### Invite links when email fails
+
+If an invite email can't be sent (for example Resend refusing it before a domain is verified), the person who sent the invite (a coach, or the platform owner) is shown the sign-up link to pass on, with the reason. They could invite that address anyway, so this gives them nothing extra. Password-reset links are never shown, because they open an existing account.

@@ -25,6 +25,21 @@ const btn = 'py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold disab
 const nzd = (n) => `$${Number(n || 0).toFixed(2)}`;
 const CHARGE_STATUS = { open: ['Waiting for payment', 'bg-amber-50 text-amber-700'], paid: ['Paid', 'bg-emerald-50 text-emerald-700'], void: ['Cancelled', 'bg-slate-100 text-slate-500'] };
 
+// A sign-up link to pass on by text or message when the invite email couldn't be sent
+function InviteLink({ url }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="space-y-1">
+      <p>Send them this link yourself instead. It works once, for 3 days:</p>
+      <div className="flex gap-2 items-center">
+        <code className="flex-1 p-2 bg-white rounded border border-slate-200 break-all select-all font-mono text-[11px]">{url}</code>
+        <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(url); setCopied(true); } catch { /* select it instead */ } }} className="p-2 bg-white rounded border border-slate-200" aria-label="Copy link">{copied ? <Check size={14} /> : <Copy size={14} />}</button>
+      </div>
+      <p className="text-[11px]">Only send it to the person it's for: whoever opens it sets the password.</p>
+    </div>
+  );
+}
+
 // Add someone to run a club: a treasurer (or another coach), with a title the owner can change
 const DEFAULT_TITLE = { treasurer: 'Treasurer', coach: 'Coach' };
 function AddClubMember({ club, onDone, onClose, showFlash }) {
@@ -49,13 +64,13 @@ function AddClubMember({ club, onDone, onClose, showFlash }) {
 
   if (result) {
     return (
-      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2 text-xs text-emerald-900">
+      <div className={`p-3 border rounded-lg space-y-2 text-xs ${result.emailed || result.alreadyMember ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
         <p>
           {result.alreadyMember ? `${result.email} already has an account at ${club.name}; their title is now "${result.title || DEFAULT_TITLE[result.role]}".`
-            : result.emailed ? `Invite emailed to ${result.email}. They choose a password and set up two-step verification, then they're in as ${result.title || DEFAULT_TITLE[result.role]}.`
-            : `Email isn't set up, so send ${result.email} this link. It works once, for 3 days.`}
+            : result.emailed ? `Invite emailed to ${result.email}. They choose a password and set up two-step verification, then they're in as ${result.title || DEFAULT_TITLE[result.role]}. If it hasn't arrived in a few minutes, ask them to check their junk folder.`
+            : <><b>The invite email to {result.email} couldn't be sent.</b> {result.emailProblem}</>}
         </p>
-        {result.inviteUrl && <code className="block p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{result.inviteUrl}</code>}
+        {result.inviteUrl && <InviteLink url={result.inviteUrl} />}
         <div className="flex gap-3">
           <button type="button" onClick={() => setResult(null)} className="font-semibold">Add another person</button>
           <button type="button" onClick={onClose} className="font-semibold">Done</button>
@@ -144,7 +159,14 @@ function ClubPeople({ club, onChanged, showFlash }) {
   const [adding, setAdding] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [retitling, setRetitling] = useState(null); // { id, title }
+  const [resent, setResent] = useState(null); // { id, emailed, emailProblem, inviteUrl, email }
   const base = `/api/owner/clubs/${club.id}/people`;
+  const resend = async (u) => {
+    try {
+      const res = await api(`${base}/${u.id}/invite`, { method: 'POST' });
+      setResent({ ...res, id: u.id, email: u.email });
+    } catch (err) { showFlash(err.message); }
+  };
   const load = async () => {
     try { setPeople(await api(base)); } catch (err) { showFlash(err.message); }
   };
@@ -193,6 +215,7 @@ function ClubPeople({ club, onChanged, showFlash }) {
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
+              {u.status === 'invited' && <button type="button" onClick={() => resend(u)} className="text-[11px] bg-white border border-slate-200 text-slate-700 px-2 py-1 rounded-md font-medium">Re-send invite</button>}
               <button type="button" onClick={() => setRetitling({ id: u.id, title: u.title || '' })} className="text-[11px] bg-white border border-slate-200 text-slate-700 px-2 py-1 rounded-md font-medium">Edit title</button>
               <button type="button" onClick={() => twoTap(`status-${u.id}`, () => api(`${base}/${u.id}/status`, { method: 'POST', body: { status: u.status === 'disabled' ? 'active' : 'disabled' } }), u.status === 'disabled' ? 'Switched back on' : 'Switched off and signed out')} className={`text-[11px] px-2 py-1 rounded-md font-medium ${confirm === `status-${u.id}` ? 'bg-rose-600 text-white' : 'bg-white border border-slate-200 text-rose-700'}`}>
                 {confirm === `status-${u.id}` ? 'Tap again to confirm' : u.status === 'disabled' ? 'Switch on' : 'Switch off'}
@@ -204,6 +227,13 @@ function ClubPeople({ club, onChanged, showFlash }) {
           )}
         </div>
       ))}
+      {resent && (
+        <div className={`p-3 border rounded-lg space-y-2 text-xs ${resent.emailed ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+          <p>{resent.emailed ? `A fresh invite has been emailed to ${resent.email}. If it hasn't arrived in a few minutes, ask them to check their junk folder.` : <><b>The invite email to {resent.email} couldn't be sent.</b> {resent.emailProblem}</>}</p>
+          {resent.inviteUrl && <InviteLink url={resent.inviteUrl} />}
+          <button type="button" onClick={() => setResent(null)} className="font-semibold">Done</button>
+        </div>
+      )}
       <p className="text-[11px] text-slate-400">Changing access signs them out, so the new access applies straight away. A club always keeps at least one coach. Parents are managed by the club's coaches.</p>
     </div>
   );
@@ -439,7 +469,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
     e.preventDefault();
     try {
       const res = await api('/api/owner/clubs', { method: 'POST', body: form });
-      setCreated({ email: form.email, url: res.inviteUrl, emailed: res.emailed, charge: res.charge });
+      setCreated({ email: form.email, url: res.inviteUrl, emailed: res.emailed, emailProblem: res.emailProblem, charge: res.charge });
       setForm(null);
       load();
     } catch (err) { showFlash(err.message); }
@@ -527,7 +557,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
 
             {created && (
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2 text-xs text-emerald-900">
-                <p>{created.emailed ? `Invite emailed to ${created.email}.` : `Send ${created.email} this link. It works once, for 3 days.`}</p>
+                <p>{created.emailed ? `Invite emailed to ${created.email}.` : <><b>The invite email to {created.email} couldn't be sent.</b> {created.emailProblem} Send them this link yourself instead. It works once, for 3 days.</>}</p>
                 {created.charge && <p>A payment request for the {nzd(created.charge.amountNzd)} set-up fee has been emailed too.</p>}
                 {created.url && <div className="flex gap-2 items-center">
                   <code className="flex-1 p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{created.url}</code>

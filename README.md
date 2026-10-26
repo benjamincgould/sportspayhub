@@ -118,6 +118,14 @@ Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
   - Each session the coach marks a child **present** uses one (their own pass first, then the family's); unticking gives it back. Sessions left show on the attendance list, the child's record and the parent's Payments page. Staff can correct the sessions left or cancel a pass.
 - **Financial year:** each club picks the day its year starts (Settings → Finance Settings), e.g. 1 April, 1 July or a charity's or company's own balance date. Year-to-date figures and the GST and financial reports follow it.
 
+## If invite emails don't arrive
+
+On Resend's free plan, emails sent from `onboarding@resend.dev` only go to the email address you signed up to Resend with: everyone else's are refused. The app now says so when it happens and shows you the invite link to send by text instead. To email anyone:
+
+1. Get a domain you own (e.g. `sportspayhub.co.nz`, about $20–30 a year).
+2. In Resend → **Domains**, add it and copy the DNS records it shows into your domain provider. Wait until Resend says **Verified**.
+3. In Vercel → Settings → Environment Variables, set `EMAIL_FROM` to e.g. `SportsPayHub <noreply@sportspayhub.co.nz>`, then **Redeploy**.
+
 ## Day-to-day admin
 
 **Inside a club (Settings → Team & Family Access):**

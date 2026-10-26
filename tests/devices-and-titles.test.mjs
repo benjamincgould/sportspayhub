@@ -174,3 +174,42 @@ test('the owner sees a club\'s staff (never parents), and can change access, swi
   assert.equal((await owner.put(`/api/owner/clubs/${clubId}/people/${last.id}/role`, { role: 'treasurer' })).status, 409);
   assert.equal((await owner.post(`/api/owner/clubs/${clubId}/people/${last.id}/status`, { status: 'disabled' })).status, 409);
 });
+
+test('when an invite email can\'t be sent, the inviter is told why and gets the link to pass on', async () => {
+  const mailClub = await app.clubs.createClub({ name: 'Mail Club', sport: 'Netball', status: 'active' });
+  const { b: mailCoach } = await finishSetup((await app.auth.inviteUser({ clubId: mailClub, email: 'c@mail.test', role: 'coach' })).url, 'c@mail.test');
+  await mailCoach.post('/api/users/invite', { email: 'staff@mail.test', role: 'treasurer' });
+  await finishSetup(await emailedLink(app, 'staff@mail.test'), 'staff@mail.test');
+  process.env.TEST_EMAIL_FAIL = 'You can only send testing emails to your own email address (you@example.com). To send emails to other recipients, please verify a domain.';
+  try {
+    const r = await owner.post(`/api/owner/clubs/${clubId}/members`, { email: 'dad@device.test', name: 'Dad', role: 'coach', title: 'Coach' });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.json.emailed, false);
+    assert.match(r.json.emailProblem, /verify a domain you own/);
+    assert.match(r.json.inviteUrl, /#\/invite\//, 'the owner gets the link');
+    const dadId = (await owner.get(`/api/owner/clubs/${clubId}/people`)).json.find((u) => u.email === 'dad@device.test').id;
+    const again = await owner.post(`/api/owner/clubs/${clubId}/people/${dadId}/invite`);
+    assert.equal(again.json.emailed, false);
+    assert.match(again.json.inviteUrl, /#\/invite\//);
+
+    const c = await mailCoach.post('/api/users/invite', { email: 'mum@device.test', role: 'parent' });
+    assert.equal(c.json.emailed, false);
+    assert.match(c.json.emailProblem, /Resend only sends to your own email address/);
+    assert.match(c.json.inviteUrl, /#\/invite\//, 'the coach gets the link');
+    // A password reset is never shown, even when the email fails
+    const tess = (await mailCoach.get('/api/users')).json.find((u) => u.email === 'staff@mail.test');
+    const reset = await mailCoach.post(`/api/users/${tess.id}/reset-link`);
+    assert.equal(reset.json.kind, 'reset');
+    assert.equal(reset.json.url, undefined);
+    assert.ok(reset.json.emailProblem);
+  } finally {
+    delete process.env.TEST_EMAIL_FAIL;
+  }
+  // Once it works again, the link is no longer shown
+  const dadId = (await owner.get(`/api/owner/clubs/${clubId}/people`)).json.find((u) => u.email === 'dad@device.test').id;
+  const ok = await owner.post(`/api/owner/clubs/${clubId}/people/${dadId}/invite`);
+  assert.equal(ok.json.emailed, true);
+  assert.equal(ok.json.inviteUrl, null);
+  const { b: dad } = await finishSetup(await emailedLink(app, 'dad@device.test'), 'dad@device.test');
+  assert.equal((await dad.get('/api/bootstrap')).json.me.role, 'coach');
+});
