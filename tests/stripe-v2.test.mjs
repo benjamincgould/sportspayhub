@@ -34,7 +34,8 @@ test('onboarding link and reading whether cards are switched on', async () => {
   const body = f.calls[0].body;
   assert.equal(f.calls[0].url, 'https://api.stripe.com/v2/core/account_links');
   assert.equal(body.use_case.type, 'account_onboarding');
-  assert.deepEqual(body.use_case.account_onboarding.configurations, ['merchant']);
+  assert.equal(body.use_case.account_onboarding.configurations, undefined, 'Stripe rejects this field');
+  assert.deepEqual(body.use_case.account_onboarding.collection_options, { fields: 'currently_due' });
   assert.equal(body.use_case.account_onboarding.return_url, 'https://a/?connect=done');
 
   const g = fakeFetch({ body: {} });
