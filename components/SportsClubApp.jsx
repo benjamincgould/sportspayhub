@@ -597,6 +597,16 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   }, []);
 
 
+  // Staff open the app: check card families with Stripe in the background (the server does this
+  // at most every 15 minutes), then show the up-to-date picture
+  useEffect(() => {
+    if (!remote || !isStaffView || !club.payments?.connected) return;
+    api('/api/payments/sync', { method: 'POST', body: { auto: true } })
+      .then((res) => { if (res?.checked) loadFromServer(); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // A coach who started connecting Stripe but didn't come back through Stripe's link: check
   // quietly whether the club can take cards now
   useEffect(() => {

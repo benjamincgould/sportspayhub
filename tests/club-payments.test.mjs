@@ -319,3 +319,14 @@ test('Refresh (and the daily check) asks Stripe how card families stand, even if
   const income = (await boot(coach)).transactions.filter((t) => t.amount === 25.98 && /fees$/.test(t.description));
   assert.equal(income.length, 1);
 });
+
+test('opening the app checks Stripe by itself, at most every 15 minutes', async () => {
+  await app.query(`delete from app.rate_limits`);
+  await app.query(`update app.clubs set billing = billing - 'paymentsCheckedAt' where id = $1`, clubId);
+  const first = await coach.post('/api/payments/sync', { auto: true });
+  assert.ok(first.json.checked >= 1, first.text);
+  const second = await treasurer.post('/api/payments/sync', { auto: true });
+  assert.equal(second.json.skipped, true, 'not again straight away');
+  const manual = await treasurer.post('/api/payments/sync');
+  assert.ok(manual.json.checked >= 1, 'Refresh always checks');
+});
