@@ -251,6 +251,11 @@ try {
   await pf.getByRole('button', { name: 'Add player' }).click();
   await coach.getByText('Tama Fox added').waitFor();
   await coach.getByRole('button', { name: 'Invite parent' }).click();
+  await coach.getByText('Invite the parent').waitFor();
+  await coach.getByText('mere@riverside.test').first().waitFor();
+  await coach.getByLabel('Search for a child to add').fill('Ta');
+  await coach.screenshot({ path: `${here}/coach-invite-box.png` });
+  await coach.getByRole('button', { name: 'Send invite' }).click();
   await coach.getByText(/Invite emailed to mere@riverside.test/).waitFor();
   await coach.getByText(/they'll see Tama Fox/).waitFor();
   if (await coach.locator('code').filter({ hasText: '#/invite/' }).count()) fail('the invite link must not be shown once emailed');

@@ -226,7 +226,6 @@ test('parents are found from their children\'s records: one-tap invite links eve
   const ana = (await coach.post('/api/athletes', { name: 'Ana Tui', squadId: dev.id, parent: 'Abdu Tui', email: 'Abdu@Tui.test' })).json.athlete;
   const ben = (await coach.post('/api/athletes', { name: 'Ben Tui', squadId: bronze.id, parent: 'Abdu Tui', email: 'abdu@tui.test' })).json.athlete;
   const other = (await coach.post('/api/athletes', { name: 'Someone Else', squadId: dev.id, parent: 'X', email: 'x@else.test' })).json.athlete;
-  assert.equal((await treasurer.post(`/api/athletes/${ana.id}/invite-parent`)).status, 403, 'coaches invite');
   const noEmail = (await coach.post('/api/athletes', { name: 'No Email', squadId: dev.id })).json.athlete;
   const missing = await coach.post(`/api/athletes/${noEmail.id}/invite-parent`);
   assert.equal(missing.status, 400);
@@ -255,4 +254,22 @@ test('parents are found from their children\'s records: one-tap invite links eve
   // Inviting again for an existing parent just links (no new invite)
   const again = await coach.post(`/api/athletes/${ben.id}/invite-parent`);
   assert.equal(again.json.linked, true);
+});
+
+test('the confirm box decides which children go on the parent\'s account, including different surnames', async () => {
+  const mum = (await coach.post('/api/athletes', { name: 'Lily Brown', squadId: dev.id, parent: 'Kate Smith', email: 'kate@smith.test', phone: '021 555 0101' })).json.athlete;
+  const step = (await coach.post('/api/athletes', { name: 'Jack Jones', squadId: dev.id, parent: 'Kate Smith' })).json.athlete; // no email on his record
+  const r = await coach.post(`/api/athletes/${mum.id}/invite-parent`, { athleteIds: [step.id] });
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.json.children.sort(), ['Jack Jones', 'Lily Brown'], 'the child itself is always included');
+  const kate = await setUp(await emailedLink(app, 'kate@smith.test'), 'kate@smith.test');
+  assert.deepEqual((await boot(kate)).athletes.map((a) => a.name).sort(), ['Jack Jones', 'Lily Brown']);
+  assert.equal((await boot(kate)).families.length, 1, 'one family');
+  // Another club's child can't be added
+  const otherClub = await app.clubs.createClub({ name: 'Elsewhere', sport: 'Swimming', status: 'active' });
+  const oc = await setUp((await app.auth.inviteUser({ clubId: otherClub, email: 'c@elsewhere.test', role: 'coach' })).url, 'c@elsewhere.test');
+  const { id, ...sq } = SEED_SQUADS[0];
+  const theirSquad = (await oc.post('/api/squads', sq)).json;
+  const theirs = (await oc.post('/api/athletes', { name: 'Not Ours', squadId: theirSquad.id })).json.athlete;
+  assert.equal((await coach.post(`/api/athletes/${mum.id}/invite-parent`, { athleteIds: [theirs.id] })).status, 400);
 });

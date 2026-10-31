@@ -253,3 +253,16 @@ test('already safe: the owner sees no member details', async () => {
   assert.equal((await owner.get('/api/audit')).status, 403);
 });
 
+
+test('H2: a treasurer can invite a child\'s parent (only to the email on record); the coaches are told', async () => {
+  // Free-typed parent invites and changing which children an account has stay with coaches
+  assert.equal((await treasurer.post('/api/users/invite', { email: 'sneaky@atk.test', role: 'parent', athleteIds: [otherKid.id] })).status, 403);
+  await coach.put(`/api/athletes/${otherKid.id}`, { parent: 'Other Parent', email: 'other.parent@atk.test' });
+  const r = await treasurer.post(`/api/athletes/${otherKid.id}/invite-parent`, { athleteIds: [otherKid.id] });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.email, 'other.parent@atk.test', 'always the email saved on the child');
+  await app.settle();
+  const notice = app.mailer.outbox.findLast((m) => /invited a parent/.test(m.subject));
+  assert.ok(notice, 'a coach is emailed');
+  assert.match(notice.text, /other\.parent@atk\.test/);
+});

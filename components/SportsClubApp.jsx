@@ -895,20 +895,94 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   };
 
   // Opens the invite form in Settings, filled in from the athlete's record
-  // One tap: the parent's email comes from the child's record, and every child with that parent
-  // email is linked to the parent's account
-  const inviteParent = async (a) => {
+  // Inviting a parent: a box shows the parent's details from the child's record and the children
+  // to put on their account (brothers and sisters suggested; search for any others), then sends
+  const [inviteBox, setInviteBox] = useState(null); // { athleteId, selected: [ids], query }
+  const lower = (s) => String(s || '').trim().toLowerCase();
+  const surname = (s) => lower(String(s || '').trim().split(/\s+/).pop());
+  const inviteSuggestions = (a) => {
+    const rows = [];
+    for (const k of athletes) {
+      if (k.id === a.id) continue;
+      const why = a.email && lower(k.email) === lower(a.email) ? 'Same parent email'
+        : a.parent && lower(k.parent) === lower(a.parent) ? 'Same parent name'
+        : surname(k.name) && (surname(k.name) === surname(a.name) || surname(k.name) === surname(a.parent)) ? 'Same last name' : null;
+      if (why) rows.push({ k, why, likely: why !== 'Same last name' });
+    }
+    return rows;
+  };
+  const inviteParent = (a) => {
     if (!a.email) { startEditAthlete(a); showFlash("Add the parent's email, save, then tap Invite parent"); return; }
-    if (!remote) { setParentInvite({ athleteId: a.id, emailed: true, email: a.email, children: athletes.filter((x) => x.email === a.email).map((x) => x.name) }); return; }
+    setParentInvite(null);
+    setInviteBox({ athleteId: a.id, selected: [a.id, ...inviteSuggestions(a).filter((s) => s.likely).map((s) => s.k.id)], query: '' });
+  };
+  const sendParentInvite = async (a) => {
+    const ids = inviteBox.selected;
+    if (!remote) {
+      setParentInvite({ athleteId: a.id, emailed: true, email: a.email, children: athletes.filter((x) => ids.includes(x.id)).map((x) => x.name) });
+      setInviteBox(null);
+      return;
+    }
     setBusy(`invite-${a.id}`);
     try {
-      const res = await api(`/api/athletes/${a.id}/invite-parent`, { method: 'POST' });
+      const res = await api(`/api/athletes/${a.id}/invite-parent`, { method: 'POST', body: { athleteIds: ids } });
       setParentInvite({ ...res, athleteId: a.id });
+      setInviteBox(null);
+      loadFromServer();
     } catch (e) {
       if (!e.signedOut) showFlash(e.message);
     } finally {
       setBusy('');
     }
+  };
+  const renderInviteBox = (a) => {
+    if (inviteBox?.athleteId !== a.id) return null;
+    const { selected, query } = inviteBox;
+    const toggle = (id) => setInviteBox({ ...inviteBox, selected: selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id] });
+    const suggestions = inviteSuggestions(a);
+    const shown = new Set([a.id, ...suggestions.map((s) => s.k.id)]);
+    const q = lower(query);
+    const found = q.length >= 2 ? athletes.filter((k) => !shown.has(k.id) && (lower(k.name).includes(q) || lower(k.parent).includes(q))).slice(0, 8) : [];
+    const extra = athletes.filter((k) => selected.includes(k.id) && !shown.has(k.id) && !found.includes(k));
+    const row = (k, note) => (
+      <label key={k.id} className="flex items-center gap-2 py-1.5 border-b border-indigo-100 text-sm">
+        <input type="checkbox" checked={selected.includes(k.id)} disabled={k.id === a.id} onChange={() => toggle(k.id)} aria-label={`Link ${k.name}`} />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">{k.name}</span>
+          <span className="block text-[11px] text-slate-500">{squadById(k.squadId)?.name || `No ${lc(W.group)}`}{k.parent ? ` · parent: ${k.parent}` : ''}</span>
+        </span>
+        {note && <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-indigo-700 shrink-0">{note}</span>}
+      </label>
+    );
+    return (
+      <div className="p-3 bg-indigo-50 border-2 border-indigo-200 rounded-lg space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">Invite the parent</p>
+          <p className="text-[11px] text-slate-500">Check the details and the children, then send. The details come from {a.name.split(' ')[0]}'s record; to change them, cancel and tap Edit details.</p>
+        </div>
+        <div className="bg-white rounded-lg p-2.5 text-sm space-y-0.5">
+          <p><span className="text-slate-500 text-xs w-14 inline-block">Name</span> {a.parent || <span className="text-amber-700">not added</span>}</p>
+          <p><span className="text-slate-500 text-xs w-14 inline-block">Email</span> <span className="font-medium">{a.email}</span></p>
+          <p><span className="text-slate-500 text-xs w-14 inline-block">Phone</span> {a.phone || <span className="text-slate-400">not added</span>}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-slate-700">Children on this parent's account</p>
+          {row(a, 'This child')}
+          {suggestions.map((s) => row(s.k, s.why))}
+          {extra.map((k) => row(k, 'Added'))}
+          <div className="pt-2">
+            <input value={query} onChange={(e) => setInviteBox({ ...inviteBox, query: e.target.value })} placeholder={`Search for another ${lc(W.member)} (e.g. a different last name)`} aria-label="Search for a child to add" className={`${inputCls} mt-0`} />
+            {found.map((k) => row(k, null))}
+            {q.length >= 2 && found.length === 0 && <p className="text-[11px] text-slate-400 pt-1">No other {lc(W.members)} match.</p>}
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-500">{selected.length} {selected.length === 1 ? 'child' : 'children'} will be on one account and one family payment. The parent sees these children's details, including medical information.</p>
+        <div className="flex gap-2">
+          <button onClick={() => sendParentInvite(a)} disabled={busy === `invite-${a.id}`} className={`flex-1 ${primaryBtn} py-2`}><Mail size={12} /> {busy === `invite-${a.id}` ? 'Sending…' : 'Send invite'}</button>
+          <button onClick={() => setInviteBox(null)} className={`flex-1 ${ghostBtn}`}><X size={12} /> Cancel</button>
+        </div>
+      </div>
+    );
   };
   const renderParentInvite = (a) => {
     const r = parentInvite?.athleteId === a.id ? parentInvite : null;
@@ -2083,8 +2157,9 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                   <Trash2 size={12} /> {confirmDeleteAthlete === a.id ? 'Tap again' : ''}
                 </button>
               )}
-              {isCoach && <button onClick={() => inviteParent(a)} disabled={busy === `invite-${a.id}`} className={`flex-1 ${ghostBtn} bg-indigo-50 text-indigo-700 disabled:opacity-50`}><UserPlus size={12} /> {busy === `invite-${a.id}` ? 'Sending…' : a.email ? 'Invite parent' : "Add parent's email to invite"}</button>}
+              <button onClick={() => inviteParent(a)} className={`flex-1 ${ghostBtn} bg-indigo-50 text-indigo-700`}><UserPlus size={12} /> {a.email ? 'Invite parent' : "Add parent's email to invite"}</button>
             </div>
+            {renderInviteBox(a)}
             {renderParentInvite(a)}
           </div>
         )}
