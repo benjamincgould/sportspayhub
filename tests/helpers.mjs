@@ -170,6 +170,12 @@ export function fakeStripe() {
       cancel: rec('subscriptions.cancel', {}),
     },
     accounts: { create: rec('accounts.create', { id: 'acct_club' }), retrieve: rec('accounts.retrieve', { id: 'acct_club', charges_enabled: true }) },
+    // Accounts v2 (how clubs connect)
+    connectV2: {
+      createAccount: rec('v2.accounts.create', { id: 'acct_club' }),
+      onboardingLink: rec('v2.account_links.create', { url: 'https://connect.stripe.test/onboarding' }),
+      getAccount: rec('v2.accounts.retrieve', { id: 'acct_club', configuration: { merchant: { capabilities: { card_payments: { status: 'active' } } } } }),
+    },
     accountLinks: { create: rec('accountLinks.create', { url: 'https://connect.stripe.test/onboarding' }) },
     products: { retrieve: rec('products.retrieve', { name: 'x' }), update: rec('products.update', {}), create: rec('products.create', {}) },
     prices: { list: rec('prices.list', { data: [] }), create: rec('prices.create', (p) => ({ id: p?.lookup_key ? `price_${p.lookup_key}` : 'price_test' })) },

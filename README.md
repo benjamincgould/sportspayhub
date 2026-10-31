@@ -86,6 +86,7 @@ Clubs are paid straight into **their own** Stripe accounts (you never hold their
    - **Events on your account:** `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.voided`, `invoice.payment_failed`. Copy its **signing secret** (starts `whsec_`) into Vercel as `STRIPE_WEBHOOK_SECRET`.
    - **Events on connected accounts:** `account.updated`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`. Its signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`.
 5. **Your secret key:** Developers → **API keys** → copy the **Secret key** (starts `sk_test_` in test mode) into Vercel as `STRIPE_SECRET_KEY`. Then **Redeploy**.
+   Clubs' Stripe accounts are created with Stripe's **Accounts v2** API (required for new Connect platforms), using API version `2026-10-28.preview` (set `STRIPE_V2_VERSION` to change it).
 6. **Test:** in a club, a coach taps **Connect Stripe** in Settings and fills in Stripe's test form; then a parent pays with card `4242 4242 4242 4242`, any future date and any CVC.
 7. **Going live:** once Stripe has verified your business, switch off test mode, repeat steps 4–5 with the live webhooks and live key (`sk_live_`), and redeploy.
 

@@ -591,6 +591,16 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   }, []);
 
 
+  // A coach who started connecting Stripe but didn't come back through Stripe's link: check
+  // quietly whether the club can take cards now
+  useEffect(() => {
+    if (!remote || currentRole !== 'coach' || !club.payments?.started || club.payments?.connected) return;
+    api('/api/club/connect/refresh', { method: 'POST' })
+      .then((res) => { if (res.club?.payments?.connected) { updateUser?.({ ...me, club: res.club }); showFlash('Online payments are on'); } })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Runs a server call; shows its error message instead of crashing. Returns null on failure.
   const attempt = async (fn) => {
     try { return await fn(); } catch (e) { if (!e.signedOut) showFlash(e.message); return null; }
