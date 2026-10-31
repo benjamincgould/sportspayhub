@@ -993,14 +993,14 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
             <p>
               {result.kind === 'reset'
                 ? `We've emailed ${result.email} a link to choose a new password. For their safety, only they receive it. It works for 1 hour.`
-                : `We've emailed ${result.email} their invite. It works for 3 days. If it hasn't arrived in a few minutes, ask them to check their junk folder.`}
+                : `We've emailed ${result.email} their invite. It works for 7 days. If it hasn't arrived in a few minutes, ask them to check their junk folder.`}
             </p>
           ) : !result.url ? (
             <p><b>The email to {result.email} couldn't be sent.</b> {result.problem || 'Check the email set-up in Vercel.'}</p>
           ) : (
             <>
               <p><b>The invite email to {result.email} couldn't be sent.</b> {result.problem}</p>
-              <p>{`Send them this link yourself instead (by text or message). It works once, for 3 days.`}</p>
+              <p>{`Send them this link yourself instead (by text or message). It works once, for 7 days.`}</p>
               <div className="flex gap-2 items-center">
                 <code className="flex-1 p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{result.url}</code>
                 <button type="button" onClick={async () => setCopied(await copyToClipboard(result.url))} className="p-2 bg-white rounded border border-emerald-200" aria-label="Copy link">{copied ? <Check size={14} /> : <Copy size={14} />}</button>

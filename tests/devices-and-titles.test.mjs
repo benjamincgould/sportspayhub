@@ -214,3 +214,11 @@ test('when an invite email can\'t be sent, the inviter is told why and gets the 
   const { b: dad } = await finishSetup(await emailedLink(app, 'dad@device.test'), 'dad@device.test');
   assert.equal((await dad.get('/api/bootstrap')).json.me.role, 'coach');
 });
+
+test('invite links work for a week', async () => {
+  const r = await owner.post(`/api/owner/clubs/${clubId}/members`, { email: 'week@device.test', role: 'treasurer' });
+  assert.equal(r.status, 200, r.text);
+  const { days } = await app.one(`select extract(epoch from t.expires_at - now()) / 86400 as days from app.tokens t
+                                  join app.profiles p on p.id = t.user_id where p.email = 'week@device.test' and t.kind = 'invite'`);
+  assert.ok(Number(days) > 6.9 && Number(days) <= 7, `expires in ${days} days`);
+});

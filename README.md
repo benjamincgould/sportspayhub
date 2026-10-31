@@ -93,7 +93,7 @@ Add and verify your domain, then create an API key. Set `RESEND_API_KEY` (or `PO
 4. A coach taps **Subscribe** in Settings and pays on Stripe's page. The club unlocks straight away.
 5. If the subscription ends, the club becomes look-only again. Their data is kept.
 
-Unconfirmed sign-ups are removed after 7 days by the daily clean-up.
+Unconfirmed sign-ups are removed after 8 days by the daily clean-up (their link works for 7).
 
 ## How the money works
 
@@ -133,7 +133,7 @@ On Resend's free plan, emails from `onboarding@resend.dev` only reach the addres
 ## Day-to-day admin
 
 **Inside a club (Settings → Team & Family Access):**
-- **Invite people (coaches only):** parents, the treasurer and other coaches. Tick every child a parent should see. Invite links work for 3 days.
+- **Invite people (coaches only):** parents, the treasurer and other coaches. Tick every child a parent should see. Invite links work for 7 days.
 - **Remember this device:** when entering the two-step code, staff can tick **Remember this device for 8 hours**. If they're signed out for being idle, they sign back in with just their password on that device. Signing out on purpose forgets it.
 - **Lost phone:** the person uses one of their recovery codes. That removes the old phone, and staff add their new phone straight away. Or a coach taps "Lost phone: reset 2-step".
 - **Forgotten password:** "Forgot password" on the sign-in page, or staff tap "Email a password reset". The link goes only to that person and works for 1 hour.

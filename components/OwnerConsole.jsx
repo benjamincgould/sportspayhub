@@ -30,7 +30,7 @@ function InviteLink({ url }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-1">
-      <p>Send them this link yourself instead. It works once, for 3 days:</p>
+      <p>Send them this link yourself instead. It works once, for 7 days:</p>
       <div className="flex gap-2 items-center">
         <code className="flex-1 p-2 bg-white rounded border border-slate-200 break-all select-all font-mono text-[11px]">{url}</code>
         <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(url); setCopied(true); } catch { /* select it instead */ } }} className="p-2 bg-white rounded border border-slate-200" aria-label="Copy link">{copied ? <Check size={14} /> : <Copy size={14} />}</button>
@@ -557,7 +557,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
 
             {created && (
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2 text-xs text-emerald-900">
-                <p>{created.emailed ? `Invite emailed to ${created.email}.` : <><b>The invite email to {created.email} couldn't be sent.</b> {created.emailProblem} Send them this link yourself instead. It works once, for 3 days.</>}</p>
+                <p>{created.emailed ? `Invite emailed to ${created.email}.` : <><b>The invite email to {created.email} couldn't be sent.</b> {created.emailProblem} Send them this link yourself instead. It works once, for 7 days.</>}</p>
                 {created.charge && <p>A payment request for the {nzd(created.charge.amountNzd)} set-up fee has been emailed too.</p>}
                 {created.url && <div className="flex gap-2 items-center">
                   <code className="flex-1 p-2 bg-white rounded border border-emerald-200 break-all select-all font-mono text-[11px]">{created.url}</code>

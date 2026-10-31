@@ -127,7 +127,7 @@ test('daily clean-up removes expired sessions and never-confirmed sign-ups, sign
   const club = await app.one("select id from app.clubs where name = 'Abandoned FC'");
   assert.ok(club, 'sign-up created a preview club');
   assert.equal((await app.one("select count(*)::int as n from auth.users where email = 'al@abandoned.test'")).n, 1);
-  await app.query("update app.clubs set created_at = now() - interval '8 days' where id = $1", club.id);
+  await app.query("update app.clubs set created_at = now() - interval '9 days' where id = $1", club.id);
   await app.query("insert into app.sessions (id_hash, user_id, stage, expires_at) select 'old', id, 'full', now() - interval '1 minute' from app.profiles limit 1");
 
   const result = await app.sweep();
