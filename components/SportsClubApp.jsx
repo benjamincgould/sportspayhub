@@ -556,8 +556,13 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       if (!remote) setCurrentRole('parent');
       setActiveTab('payments');
       showFlash(checkout === 'success' ? 'Payment complete — thank you!' : 'Checkout cancelled, nothing was charged');
+      const session = params.get('session');
       window.history.replaceState({}, '', window.location.pathname);
-      if (checkout === 'success') setTimeout(loadFromServer, 3000); // give Stripe's webhook a moment
+      if (checkout === 'success' && remote && session) {
+        // Check the payment with Stripe now, rather than waiting for Stripe's message
+        api('/api/checkout/confirm', { method: 'POST', body: { sessionId: session } })
+          .then(() => loadFromServer()).catch(() => setTimeout(loadFromServer, 3000));
+      } else if (checkout === 'success') setTimeout(loadFromServer, 3000);
     }
     loadFromServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps

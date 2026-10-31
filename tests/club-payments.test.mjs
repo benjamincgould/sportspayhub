@@ -273,3 +273,25 @@ test('the confirm box decides which children go on the parent\'s account, includ
   const theirs = (await oc.post('/api/athletes', { name: 'Not Ours', squadId: theirSquad.id })).json.athlete;
   assert.equal((await coach.post(`/api/athletes/${mum.id}/invite-parent`, { athleteIds: [theirs.id] })).status, 400);
 });
+
+test('back from Stripe\'s page, the app checks the payment itself (no need to wait for Stripe\'s message)', async () => {
+  const fam = (await boot(parent)).families[0];
+  // Start from a family without auto-pay
+  await app.query(`update app.families set billing = '{}' where id = $1`, fam.id);
+  assert.equal((await boot(parent)).families[0].hasSubscription, false);
+  const subCall = (await parent.post('/api/checkout/subscription', { familyId: fam.id }));
+  assert.equal(subCall.status, 200, subCall.text);
+  assert.match(stripe.calls.findLast((c) => c.name === 'checkout.sessions.create').args[0].success_url, /checkout=success&session=\{CHECKOUT_SESSION_ID\}$/);
+  stripe.checkout.sessions.retrieve = async (id) => ({ id, status: 'complete', mode: 'subscription', metadata: { familyId: String(fam.id) }, customer: 'cus_back',
+    subscription: { id: 'sub_back', current_period_end: 1893456000, default_payment_method: { card: { last4: '1111' } } } });
+  assert.equal((await parent.post('/api/checkout/confirm', { sessionId: 'nope' })).status, 400);
+  const r = await parent.post('/api/checkout/confirm', { sessionId: 'cs_test_back123' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.done, true);
+  const after = (await boot(parent)).families[0];
+  assert.equal(after.hasSubscription, true);
+  assert.equal(after.cardLast4, '1111');
+  // Another parent can't confirm (or see) this family's checkout
+  const stranger = await setUp((await app.auth.inviteUser({ clubId, email: 'stranger@fam.test', role: 'parent', athleteIds: [] })).url, 'stranger@fam.test');
+  assert.equal((await stranger.post('/api/checkout/confirm', { sessionId: 'cs_test_back123' })).status, 404);
+});
