@@ -855,6 +855,7 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
   const isCoach = me.role === 'coach';
   const [users, setUsers] = useState([]);
   const [loadError, setLoadError] = useState('');
+  const inviteFormRef = useRef(null);
   const [form, setForm] = useState(null);
   const [result, setResult] = useState(null); // { email, url, emailed }
   const [confirm, setConfirm] = useState(null); // `${action}-${id}`
@@ -867,7 +868,15 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
   const load = () => api('/api/users').then(setUsers).catch((err) => setLoadError(err.message));
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    if (inviteRequest) { setForm({ role: 'parent', email: '', name: '', athleteIds: [], ...inviteRequest }); onInviteHandled?.(); }
+    if (inviteRequest) {
+      setForm({ role: 'parent', email: '', name: '', athleteIds: [], ...inviteRequest });
+      onInviteHandled?.();
+      // Bring the form into view (it's further down Settings) and put the cursor in the email box
+      setTimeout(() => {
+        inviteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        inviteFormRef.current?.querySelector('input[type="email"]')?.focus({ preventScroll: true });
+      }, 50);
+    }
   }, [inviteRequest, onInviteHandled]);
 
   const athleteName = (id) => athletes.find((a) => a.id === id)?.name || `${words.member} ${id}`;
@@ -963,8 +972,9 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
       {loadError && <Alert>{loadError}</Alert>}
 
       {form && (
-        <form onSubmit={sendInvite} className="p-3 bg-slate-50 rounded-lg space-y-2">
-          <p className="text-xs font-semibold text-slate-700">Invite someone</p>
+        <form ref={inviteFormRef} onSubmit={sendInvite} className="p-3 bg-indigo-50 border-2 border-indigo-200 rounded-lg space-y-2 scroll-mt-24">
+          <p className="text-sm font-semibold text-slate-800">{form.role === 'parent' && form.athleteIds?.length ? 'Invite their parent' : 'Invite someone'}</p>
+          <p className="text-[11px] text-slate-500">Enter the email address, then tap Send invite.</p>
           <label className="block text-xs text-slate-500">Email
             <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={field} />
           </label>
