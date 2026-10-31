@@ -295,3 +295,27 @@ test('back from Stripe\'s page, the app checks the payment itself (no need to wa
   const stranger = await setUp((await app.auth.inviteUser({ clubId, email: 'stranger@fam.test', role: 'parent', athleteIds: [] })).url, 'stranger@fam.test');
   assert.equal((await stranger.post('/api/checkout/confirm', { sessionId: 'cs_test_back123' })).status, 404);
 });
+
+test('Refresh (and the daily check) asks Stripe how card families stand, even if webhooks were missed', async () => {
+  const fam = (await boot(coach)).families.find((f) => f.hasSubscription);
+  assert.ok(fam, 'a card family');
+  assert.equal((await parent.post('/api/payments/sync')).status, 403, 'staff only');
+  stripe.subscriptions.retrieve = async (id) => ({ id, status: 'past_due', current_period_end: 1893456000, cancel_at_period_end: false,
+    latest_invoice: { id: 'in_failed', status: 'open', attempt_count: 1, amount_paid: 0 }, default_payment_method: { card: { last4: '0341' } } });
+  const r = await treasurer.post('/api/payments/sync');
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.json.checked >= 1);
+  assert.equal((await boot(coach)).families.find((f) => f.id === fam.id).status, 'overdue', 'a failed payment shows as overdue');
+
+  stripe.subscriptions.retrieve = async (id) => ({ id, status: 'active', current_period_end: 1893456000, cancel_at_period_end: false,
+    latest_invoice: { id: 'in_paid_late', status: 'paid', amount_paid: 2598, status_transitions: { paid_at: 1890000000 } }, default_payment_method: { card: { last4: '4242' } } });
+  await app.query(`delete from app.rate_limits`);
+  await app.sweep();
+  const after = (await boot(coach)).families.find((f) => f.id === fam.id);
+  assert.equal(after.status, 'paid');
+  assert.equal(after.cardLast4, '4242');
+  await app.query(`delete from app.rate_limits`);
+  await treasurer.post('/api/payments/sync'); // again: the payment is recorded only once
+  const income = (await boot(coach)).transactions.filter((t) => t.amount === 25.98 && /fees$/.test(t.description));
+  assert.equal(income.length, 1);
+});

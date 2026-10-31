@@ -395,6 +395,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // ---------- Derived data ----------
   const isCoach = currentRole === 'coach';
+  const isStaffView = currentRole === 'coach' || currentRole === 'treasurer';
   const squadById = (id) => squads.find((s) => s.id === id);
   const priceFor = (a) => squadById(a.squadId)?.[a.frequency] ?? 0;
 
@@ -1239,8 +1240,13 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   // Screens (shared between roles where it makes sense)
   // ======================================================================
 
+  // Staff: also ask Stripe how each card family stands; parents just reload
+  const refreshAll = async () => {
+    if (isStaffView) await api('/api/payments/sync', { method: 'POST' }).catch(() => {});
+    loadFromServer();
+  };
   const syncButton = remote && (
-    <button onClick={loadFromServer} disabled={busy === 'sync'} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-lg font-medium flex items-center gap-1 disabled:opacity-50">
+    <button onClick={refreshAll} disabled={busy === 'sync'} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded-lg font-medium flex items-center gap-1 disabled:opacity-50">
       <RefreshCw size={12} className={busy === 'sync' ? 'animate-spin' : ''} /> Refresh
     </button>
   );
