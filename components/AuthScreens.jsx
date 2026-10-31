@@ -967,13 +967,14 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
     <div className={card}>
       <div className="flex justify-between items-center">
         <h3 className="font-semibold text-sm flex items-center gap-1.5"><Users size={14} /> Team & Family Access</h3>
-        {isCoach && !form && <button type="button" onClick={() => { setResult(null); setForm({ role: 'parent', email: '', name: '', athleteIds: [] }); }} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1"><Mail size={12} /> Invite</button>}
+        {isCoach && !form && <button type="button" onClick={() => { setResult(null); setForm({ role: 'treasurer', email: '', name: '', athleteIds: [] }); }} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1"><Mail size={12} /> Invite staff</button>}
       </div>
+      {isCoach && <p className="text-xs text-slate-500">To invite a parent, open their child in {words.members} and tap <b>Invite parent</b>. The email comes from the child's record, and brothers and sisters with the same parent email are linked to one account automatically.</p>}
       {loadError && <Alert>{loadError}</Alert>}
 
       {form && (
         <form ref={inviteFormRef} onSubmit={sendInvite} className="p-3 bg-indigo-50 border-2 border-indigo-200 rounded-lg space-y-2 scroll-mt-24">
-          <p className="text-sm font-semibold text-slate-800">{form.role === 'parent' && form.athleteIds?.length ? 'Invite their parent' : 'Invite someone'}</p>
+          <p className="text-sm font-semibold text-slate-800">Invite a coach or treasurer</p>
           <p className="text-[11px] text-slate-500">Enter the email address, then tap Send invite.</p>
           <label className="block text-xs text-slate-500">Email
             <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={field} />
@@ -984,16 +985,10 @@ export function TeamAccess({ me, athletes, showFlash, inviteRequest, onInviteHan
           {isCoach && (
             <label className="block text-xs text-slate-500">Access
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={field}>
-                <option value="parent">Parent / guardian — their own children only</option>
                 <option value="treasurer">Treasurer — payments, reports, contact details</option>
                 <option value="coach">Coach — everything, including medical details</option>
               </select>
             </label>
-          )}
-          {form.role === 'parent' && (
-            <div className="text-xs text-slate-500">Which {words.members.toLowerCase()} are theirs? Tick all their children.
-              <AthletePicker value={form.athleteIds} onChange={(ids) => setForm({ ...form, athleteIds: ids })} />
-            </div>
           )}
           {form.role !== 'parent' && (
             <label className="block text-xs text-slate-500">Title (optional)

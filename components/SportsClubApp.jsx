@@ -415,7 +415,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   const [paymentsConnected, setPaymentsConnected] = useState(false);
   const [showAddAthlete, setShowAddAthlete] = useState(false);
   const [newAthlete, setNewAthlete] = useState(null);
-  const [inviteRequest, setInviteRequest] = useState(null);
+  const [parentInvite, setParentInvite] = useState(null); // result of 'Invite parent' on a child's record
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [recording, setRecording] = useState(null); // { id, amount } while recording a family's bank payment
   const [familiesState, setFamilies] = useState([]);
@@ -860,11 +860,13 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) { showFlash('Check the email address'); return; }
     let created;
     let createdFamily = null;
+    let linkedParent = false;
     if (remote) {
       const res = await attempt(() => api('/api/athletes', { method: 'POST', body: f }));
       if (!res) return;
       created = res.athlete;
       createdFamily = res.family;
+      linkedParent = res.linkedParent;
     } else {
       created = { ...f, name: f.name.trim(), id: Math.max(0, ...athletes.map((a) => a.id)) + 1, status: 'paid', regularSessions: [], autoDebit: false, hasSubscription: false, cardLast4: null, nextBillingDate: null, emergency: f.emergency || '', allergies: f.allergies || '', medication: f.medication || '' };
     }
@@ -874,7 +876,9 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     setNewAthlete(null);
     setAthleteSearch('');
     setExpandedAthleteId(created.id);
-    showFlash(remote && created.email ? `${created.name} added. Invite their parent from Settings or their record.` : `${created.name} added`);
+    showFlash(linkedParent ? `${created.name} added and linked to ${created.parent || 'their parent'}'s account (same family)`
+      : remote && created.email ? `${created.name} added. Tap "Invite parent" on their record to send the invite.` : `${created.name} added`);
+    if (linkedParent) loadFromServer();
   };
 
   // Permanently remove a member (coach only). Two taps, then everything about them is deleted.
@@ -891,9 +895,44 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
   };
 
   // Opens the invite form in Settings, filled in from the athlete's record
-  const inviteParent = (a) => {
-    setInviteRequest({ email: a.email || '', name: a.parent || '', role: 'parent', athleteIds: [a.id] });
-    setActiveTab('settings');
+  // One tap: the parent's email comes from the child's record, and every child with that parent
+  // email is linked to the parent's account
+  const inviteParent = async (a) => {
+    if (!a.email) { startEditAthlete(a); showFlash("Add the parent's email, save, then tap Invite parent"); return; }
+    if (!remote) { setParentInvite({ athleteId: a.id, emailed: true, email: a.email, children: athletes.filter((x) => x.email === a.email).map((x) => x.name) }); return; }
+    setBusy(`invite-${a.id}`);
+    try {
+      const res = await api(`/api/athletes/${a.id}/invite-parent`, { method: 'POST' });
+      setParentInvite({ ...res, athleteId: a.id });
+    } catch (e) {
+      if (!e.signedOut) showFlash(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const renderParentInvite = (a) => {
+    const r = parentInvite?.athleteId === a.id ? parentInvite : null;
+    if (!r) return null;
+    const kids = r.children?.length ? r.children.join(', ') : a.name;
+    return (
+      <div className={`p-3 border rounded-lg space-y-2 text-xs ${r.emailed || r.linked ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+        <p>
+          {r.linked ? <>{r.email} already has an account, so <b>{kids}</b> {r.children?.length > 1 ? 'are' : 'is'} linked to it. Nothing else to do.</>
+            : r.emailed ? <>Invite emailed to <b>{r.email}</b>. When they sign in they'll see <b>{kids}</b>. It works for 7 days; if it hasn't arrived in a few minutes, ask them to check their junk folder.</>
+            : <><b>The invite email to {r.email} couldn't be sent.</b> {r.emailProblem}</>}
+        </p>
+        {r.inviteUrl && (
+          <div className="space-y-1">
+            <p>Send them this link yourself instead (by text or message). It works once, for 7 days:</p>
+            <div className="flex gap-2 items-center">
+              <code className="flex-1 p-2 bg-white rounded border border-amber-200 break-all select-all font-mono text-[11px]">{r.inviteUrl}</code>
+              <button type="button" onClick={() => copyText(r.inviteUrl, 'Invite link')} className="p-2 bg-white rounded border border-amber-200" aria-label="Copy invite link"><Copy size={14} /></button>
+            </div>
+          </div>
+        )}
+        <button type="button" onClick={() => setParentInvite(null)} className="font-semibold">Done</button>
+      </div>
+    );
   };
 
   // ----- Squads & timetables -----
@@ -2044,8 +2083,9 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
                   <Trash2 size={12} /> {confirmDeleteAthlete === a.id ? 'Tap again' : ''}
                 </button>
               )}
-              {remote && isCoach && <button onClick={() => inviteParent(a)} className={`flex-1 ${ghostBtn} bg-indigo-50 text-indigo-700`}><UserPlus size={12} /> Invite or link parent</button>}
+              {isCoach && <button onClick={() => inviteParent(a)} disabled={busy === `invite-${a.id}`} className={`flex-1 ${ghostBtn} bg-indigo-50 text-indigo-700 disabled:opacity-50`}><UserPlus size={12} /> {busy === `invite-${a.id}` ? 'Sending…' : a.email ? 'Invite parent' : "Add parent's email to invite"}</button>}
             </div>
+            {renderParentInvite(a)}
           </div>
         )}
       </div>
@@ -2196,7 +2236,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
       </div>
     ));
   const renderTeamAccess = () => (remote
-    ? <TeamAccess me={me} athletes={athletes} words={W} showFlash={showFlash} inviteRequest={inviteRequest} onInviteHandled={() => setInviteRequest(null)} />
+    ? <TeamAccess me={me} athletes={athletes} words={W} showFlash={showFlash} />
     : renderDemoTeam());
 
   // Demo: who can sign in to the pretend club (sample people; invites aren't sent)

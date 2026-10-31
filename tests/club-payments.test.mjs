@@ -1,6 +1,6 @@
 // How parents pay their club: the club decides card or bank transfer for each family, and a
 // family's children are billed together (one schedule, one total, one reference, one card payment).
-import { startServer, browser, tokenFromUrl, totpNow, PASSWORD, SEED_SQUADS, fakeStripe } from './helpers.mjs';
+import { startServer, browser, tokenFromUrl, totpNow, PASSWORD, SEED_SQUADS, fakeStripe, emailedLink } from './helpers.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -220,4 +220,39 @@ test('card fees: the club chooses whether it pays Stripe\'s fee or parents do; p
   const back = stripe.calls.findLast((c) => c.name === 'subscriptions.update' && c.args[1].items);
   assert.ok(back.args[1].items.every((i) => !String(i.price || '').startsWith('price_cardfee_')));
   assert.equal((await boot(parent)).families[0].cardFee, 0);
+});
+
+test('parents are found from their children\'s records: one-tap invite links every child with that parent email', async () => {
+  const ana = (await coach.post('/api/athletes', { name: 'Ana Tui', squadId: dev.id, parent: 'Abdu Tui', email: 'Abdu@Tui.test' })).json.athlete;
+  const ben = (await coach.post('/api/athletes', { name: 'Ben Tui', squadId: bronze.id, parent: 'Abdu Tui', email: 'abdu@tui.test' })).json.athlete;
+  const other = (await coach.post('/api/athletes', { name: 'Someone Else', squadId: dev.id, parent: 'X', email: 'x@else.test' })).json.athlete;
+  assert.equal((await treasurer.post(`/api/athletes/${ana.id}/invite-parent`)).status, 403, 'coaches invite');
+  const noEmail = (await coach.post('/api/athletes', { name: 'No Email', squadId: dev.id })).json.athlete;
+  const missing = await coach.post(`/api/athletes/${noEmail.id}/invite-parent`);
+  assert.equal(missing.status, 400);
+  assert.match(missing.json.error, /Add the parent's email to No Email's record/);
+
+  const r = await coach.post(`/api/athletes/${ana.id}/invite-parent`);
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.email, 'abdu@tui.test');
+  assert.deepEqual(r.json.children.sort(), ['Ana Tui', 'Ben Tui'], 'both children, matched by email (any capitals)');
+  assert.equal(r.json.emailed, true);
+  const abdu = await setUp(await emailedLink(app, 'abdu@tui.test'), 'abdu@tui.test');
+  const b = await boot(abdu);
+  assert.deepEqual(b.athletes.map((x) => x.name).sort(), ['Ana Tui', 'Ben Tui']);
+  assert.equal(b.families.length, 1, 'one family for the two children');
+  assert.ok(!b.athletes.some((x) => x.id === other.id));
+
+  // A new brother added later with the same parent email joins the account and the family by itself
+  const cal = await coach.post('/api/athletes', { name: 'Cal Tui', squadId: dev.id, parent: 'Abdu Tui', email: 'abdu@tui.test' });
+  assert.equal(cal.json.linkedParent, true);
+  const after = await boot(abdu);
+  assert.equal(after.athletes.length, 3);
+  assert.equal(after.families.length, 1);
+  // So does a child whose parent email is corrected to match
+  await coach.put(`/api/athletes/${noEmail.id}`, { email: 'abdu@tui.test' });
+  assert.equal((await boot(abdu)).athletes.length, 4);
+  // Inviting again for an existing parent just links (no new invite)
+  const again = await coach.post(`/api/athletes/${ben.id}/invite-parent`);
+  assert.equal(again.json.linked, true);
 });

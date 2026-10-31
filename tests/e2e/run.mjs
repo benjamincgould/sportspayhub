@@ -250,9 +250,9 @@ try {
   await pi.nth(3).fill('mere@riverside.test');
   await pf.getByRole('button', { name: 'Add player' }).click();
   await coach.getByText('Tama Fox added').waitFor();
-  await coach.getByRole('button', { name: 'Invite or link parent' }).click();
-  await coach.getByRole('button', { name: 'Send invite', exact: true }).click();
-  await coach.getByText(/We've emailed mere@riverside.test their invite/).waitFor();
+  await coach.getByRole('button', { name: 'Invite parent' }).click();
+  await coach.getByText(/Invite emailed to mere@riverside.test/).waitFor();
+  await coach.getByText(/they'll see Tama Fox/).waitFor();
   if (await coach.locator('code').filter({ hasText: '#/invite/' }).count()) fail('the invite link must not be shown once emailed');
   step('With access, the coach adds a grade, a timetable, a player, and emails the parent an invite');
 
