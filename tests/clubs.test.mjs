@@ -220,3 +220,14 @@ test('club fees: a club connects its own Stripe account and parent payments go t
   assert.deepEqual(call.args[1], { stripeAccount: 'acct_club' }, "the parent's payment is created on the club's own account");
   assert.equal((await app.auth.getClub(clubId)).billing.connectAccountId, 'acct_club');
 });
+
+test('when Stripe refuses something, the person sees Stripe\'s reason instead of "something went wrong"', async () => {
+  const { coach } = await activeClub('Refused Club', 'coach@refused.test');
+  const original = stripe.accounts.create;
+  stripe.accounts.create = async () => { const e = new Error('You must complete your platform profile to use Connect.'); e.type = 'StripeInvalidRequestError'; throw e; };
+  try {
+    const r = await coach.post('/api/club/connect');
+    assert.equal(r.status, 502);
+    assert.equal(r.json.error, 'Stripe said: You must complete your platform profile to use Connect.');
+  } finally { stripe.accounts.create = original; }
+});
