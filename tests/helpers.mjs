@@ -172,7 +172,7 @@ export function fakeStripe() {
     accounts: { create: rec('accounts.create', { id: 'acct_club' }), retrieve: rec('accounts.retrieve', { id: 'acct_club', charges_enabled: true }) },
     accountLinks: { create: rec('accountLinks.create', { url: 'https://connect.stripe.test/onboarding' }) },
     products: { retrieve: rec('products.retrieve', { name: 'x' }), update: rec('products.update', {}), create: rec('products.create', {}) },
-    prices: { list: rec('prices.list', { data: [] }), create: rec('prices.create', { id: 'price_test' }) },
+    prices: { list: rec('prices.list', { data: [] }), create: rec('prices.create', (p) => ({ id: p?.lookup_key ? `price_${p.lookup_key}` : 'price_test' })) },
     invoices: {
       create: rec('invoices.create', () => ({ id: `in_${calls.length}` })),
       finalizeInvoice: rec('invoices.finalizeInvoice', (id) => ({ id, hosted_invoice_url: `https://invoice.stripe.test/${id}` })),

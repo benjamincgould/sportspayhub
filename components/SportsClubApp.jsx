@@ -8,6 +8,7 @@ import { api } from './api';
 import { AccountSecurity, TeamAccess } from './AuthScreens';
 import { ClubSettings, PaymentMethodsCard } from './ClubSettings';
 import { applyBrandColour } from './brand';
+import { cardFeeFor, DEFAULT_CARD_FEE_RULE } from './cardFee';
 
 // The app runs two ways:
 //  - mode="server": signed in through the club server, which decides what this person may see
@@ -1274,6 +1275,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
 
   // How this club takes payments (card, bank or both; the demo shows card). The club decides each
   // family's way of paying; parents only see the one for their family.
+  const payInfo = remote ? (club.payments || {}) : demoPayments;
   const cardOn = remote ? club.payments?.card !== false : demoPayments.card;
   const bankDetails = remote ? club.payments?.bank || null : demoPayments.bank;
   const bothOffered = cardOn && Boolean(bankDetails);
@@ -1282,12 +1284,18 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
     const kids = membersOf(f);
     const showBank = Boolean(bankDetails) && f.payMethod === 'bank';
     const showCard = cardOn && f.payMethod === 'card';
-    const totalAt = (freq) => kids.reduce((sum, k) => sum + Number(squadById(k.squadId)?.[freq] || 0), 0);
+    const listedAt = (freq) => kids.reduce((sum, k) => sum + Number(squadById(k.squadId)?.[freq] || 0), 0);
+    // A card fee is added when the club passes it on (never for bank transfers)
+    const feeOn = showCard && payInfo.cardFee === 'parents';
+    const feeRule = payInfo.cardFeeRule || DEFAULT_CARD_FEE_RULE;
+    const totalAt = (freq) => listedAt(freq) + (feeOn ? cardFeeFor(listedAt(freq), feeRule) : 0);
+    const fee = feeOn ? cardFeeFor(f.total, feeRule) : 0;
+    const cardTotal = Math.round((f.total + fee) * 100) / 100;
     return (
       <div key={f.id} className="space-y-4">
         <div className="bg-gradient-to-r from-indigo-500 to-indigo-700 text-white p-4 rounded-xl shadow-md">
           <p className="text-xs text-indigo-100">{f.name} · {kids.length} {kids.length === 1 ? lc(W.member) : lc(W.members)}</p>
-          <p className="text-lg font-bold">{money(f.total)} {FREQ_TITLE[f.frequency].toLowerCase()}</p>
+          <p className="text-lg font-bold">{money(feeOn ? cardTotal : f.total)} {FREQ_TITLE[f.frequency].toLowerCase()}</p>
           <p className="text-xs mt-2 text-indigo-100">{howPaid(f)}{f.nextBillingDate ? ` · next payment ${fmtShort(f.nextBillingDate)}` : ''}</p>
         </div>
 
@@ -1305,8 +1313,17 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
               </div>
             );
           })}
+          {feeOn && (
+            <div className="flex justify-between items-center py-1.5 border-b border-slate-50 text-sm gap-2">
+              <span className="min-w-0">
+                <span className="block font-medium">Card processing fee</span>
+                <span className="block text-xs text-slate-400">The club passes on Stripe's card fee. No fee if you pay by bank transfer.</span>
+              </span>
+              <span className="font-medium shrink-0">{money(fee)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm font-bold pt-1.5">
-            <span>Family total</span><span>{money(f.total)}/{FREQ_LABEL[f.frequency]}</span>
+            <span>Family total</span><span>{money(feeOn ? cardTotal : f.total)}/{FREQ_LABEL[f.frequency]}</span>
           </div>
         </div>
 
@@ -1368,7 +1385,7 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
           </button>
         ) : (
           <button onClick={() => startAutoPay(f)} disabled={busy === 'autopay'} className={`w-full ${primaryBtn}`}>
-            <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `Set up automatic ${FREQ_TITLE[f.frequency].toLowerCase()} card payments (${money(f.total)})`}
+            <CreditCard size={14} /> {busy === 'autopay' ? 'Opening secure checkout…' : `Set up automatic ${FREQ_TITLE[f.frequency].toLowerCase()} card payments (${money(feeOn ? cardTotal : f.total)})`}
           </button>
         ))}
         {f.cardStopping && <p className="text-[11px] text-amber-700 text-center">Your card payments stop at the end of the period already paid{f.nextBillingDate ? ` (${fmtShort(f.nextBillingDate)})` : ''}. After that, please pay by bank transfer.</p>}
@@ -1395,7 +1412,9 @@ export default function SportsClubApp({ mode = 'demo', session = null, signOut, 
         <p className="text-xs text-indigo-900"><span className="font-semibold">The club is offering {who} a pass:</span> {plural(p.sessions, 'session')} for {money(p.price)}.</p>
         {showCard ? (
           <button onClick={() => buyPass(p)} disabled={busy === `pass-${p.id}`} className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs disabled:opacity-50">
-            {busy === `pass-${p.id}` ? 'Opening secure checkout…' : `Buy it by card (${money(p.price)})`}
+            {busy === `pass-${p.id}` ? 'Opening secure checkout…'
+              : payInfo.cardFee === 'parents' ? `Buy it by card (${money(p.price)} + ${money(cardFeeFor(p.price, payInfo.cardFeeRule || DEFAULT_CARD_FEE_RULE))} card fee)`
+              : `Buy it by card (${money(p.price)})`}
           </button>
         ) : showBank ? (
           <p className="text-[11px] text-indigo-800">To buy it, pay {money(p.price)} to the club's account above with reference <span className="font-mono font-medium">{f.reference}</span>. The pass starts once the club sees your payment.</p>

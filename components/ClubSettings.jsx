@@ -1,3 +1,4 @@
+import { cardFeeFor, DEFAULT_CARD_FEE_RULE } from './cardFee';
 import React, { useState, useEffect } from 'react';
 import { Palette, CreditCard, Check, Image as ImageIcon, Trash2, ExternalLink } from './icons';
 import { api } from './api';
@@ -261,25 +262,30 @@ const PAY_MODES = [
   ['both', 'Both: you choose for each family', 'Some families pay by card, others by bank transfer. You pick for each family below.'],
 ];
 
+const FEE_EXAMPLE = 57;
+
 export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false, families = [], onFamilyMethod = null, canConnectStripe = false }) {
   const p = club.payments || {};
   const savedMode = p.card !== false && p.bank ? 'both' : p.bank ? 'bank' : 'card';
   const [form, setForm] = useState({
-    mode: savedMode, defaultMethod: p.defaultMethod === 'card' ? 'card' : 'bank',
+    mode: savedMode, defaultMethod: p.defaultMethod === 'card' ? 'card' : 'bank', cardFee: p.cardFee === 'parents' ? 'parents' : 'club',
     bankAccountName: p.bank?.accountName || '', bankAccountNumber: p.bank?.accountNumber || '', instructions: p.bank?.instructions || '',
   });
   const [saving, setSaving] = useState(false);
   const card = form.mode !== 'bank';
   const bank = form.mode !== 'card';
   const dirty = form.mode !== savedMode || (bank && (form.bankAccountName !== (p.bank?.accountName || '') || form.bankAccountNumber !== (p.bank?.accountNumber || '') || form.instructions !== (p.bank?.instructions || '')))
-    || (form.mode === 'both' && form.defaultMethod !== (p.defaultMethod === 'card' ? 'card' : 'bank'));
+    || (form.mode === 'both' && form.defaultMethod !== (p.defaultMethod === 'card' ? 'card' : 'bank'))
+    || (card && form.cardFee !== (p.cardFee === 'parents' ? 'parents' : 'club'));
+  const rule = p.cardFeeRule || DEFAULT_CARD_FEE_RULE;
+  const exampleFee = cardFeeFor(FEE_EXAMPLE, rule);
 
   const save = async (e) => {
     e.preventDefault();
-    const body = { card, bank, defaultMethod: form.defaultMethod, bankAccountName: form.bankAccountName, bankAccountNumber: form.bankAccountNumber, instructions: form.instructions };
+    const body = { card, bank, defaultMethod: form.defaultMethod, cardFee: form.cardFee, bankAccountName: form.bankAccountName, bankAccountNumber: form.bankAccountNumber, instructions: form.instructions };
     if (demo) { // the sales demo: change the pretend club only, nothing is sent
       const details = bank ? { accountName: form.bankAccountName || `${club.name} Inc`, accountNumber: form.bankAccountNumber || '12-3456-0123456-00', instructions: form.instructions } : null;
-      onClubChange({ ...club, payments: { ...club.payments, card, bank: details, defaultMethod: form.defaultMethod } });
+      onClubChange({ ...club, payments: { ...club.payments, card, bank: details, defaultMethod: form.defaultMethod, cardFee: form.cardFee } });
       showFlash('Payment options saved (demo)');
       return;
     }
@@ -316,6 +322,25 @@ export function PaymentMethodsCard({ club, onClubChange, showFlash, demo = false
           </label>
         ))}
       </div>
+
+      {card && (
+        <div className="p-3 bg-slate-50 rounded-lg space-y-2" role="radiogroup" aria-label="Who pays the card fee">
+          <p className="text-xs font-semibold text-slate-700">Who pays Stripe's card fee ({rule.percent}% + {Math.round(rule.fixedNzd * 100)}c a payment)?</p>
+          {[
+            ['club', 'The club pays it', `Parents pay the listed price. The fee comes out of what the club receives (on $${FEE_EXAMPLE.toFixed(2)}, the club gets about $${(FEE_EXAMPLE - (FEE_EXAMPLE * rule.percent / 100 + rule.fixedNzd)).toFixed(2)}).`],
+            ['parents', 'Parents pay it (added as a card fee)', `A "Card processing fee" is added to card payments so the club gets the full amount: $${FEE_EXAMPLE.toFixed(2)} becomes $${(FEE_EXAMPLE + exampleFee).toFixed(2)}. Parents see it before they pay. Families paying by bank transfer pay no fee.`],
+          ].map(([value, label, help]) => (
+            <label key={value} className={`block p-2.5 rounded-lg border-2 cursor-pointer bg-white ${form.cardFee === value ? 'border-indigo-500' : 'border-slate-200'}`}>
+              <span className="flex items-center gap-2">
+                <input type="radio" name="card-fee" value={value} checked={form.cardFee === value} onChange={() => setForm({ ...form, cardFee: value })} />
+                <span className="font-semibold text-sm text-slate-800">{label}</span>
+              </span>
+              <span className="block text-[11px] text-slate-500 mt-1">{help}</span>
+            </label>
+          ))}
+          <p className="text-[11px] text-slate-400">The fee added is never more than Stripe's own fee on a New Zealand card, as surcharges must not exceed the cost of taking the card.</p>
+        </div>
+      )}
 
       {card && !p.connected && (
         <p className="text-xs text-amber-800 bg-amber-50 p-2 rounded-lg">

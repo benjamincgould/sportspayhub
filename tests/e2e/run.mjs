@@ -311,10 +311,27 @@ try {
   await parent.getByText(/Your club has set your family to pay by card/).waitFor();
   await parent.getByRole('button', { name: /card payments/ }).waitFor();
   if (await parent.getByRole('heading', { name: 'Pay by bank transfer' }).count()) fail('with card set, the bank details should be hidden');
+  // Who pays the card fee: the club chooses parents, and the parent sees it before paying
+  await coach.getByRole('button', { name: 'Settings' }).click();
+  await methodsCard.getByLabel(/Parents pay it/).check();
+  await methodsCard.getByRole('button', { name: 'Save payment options' }).click();
+  await coach.getByText('Payment options saved').waitFor();
+  await parent.reload();
+  await parent.getByRole('button', { name: 'Payments' }).click();
+  await parent.getByText('Card processing fee').waitFor();
+  await parent.screenshot({ path: `${here}/parent-card-fee.png`, fullPage: true });
+  await methodsCard.getByLabel(/The club pays it/).check();
+  await methodsCard.getByRole('button', { name: 'Save payment options' }).click();
+  await coach.getByText('Payment options saved').waitFor();
+  await coach.getByRole('button', { name: 'Home' }).click();
+  await parent.reload();
+  await parent.getByRole('button', { name: 'Payments' }).click();
+  await parent.getByText('Family total').waitFor();
+  if (await parent.getByText('Card processing fee').count()) fail('no card fee when the club pays it');
   await parent.screenshot({ path: `${here}/parent-family.png`, fullPage: true });
   await coach.getByLabel('Fox family: how they pay').selectOption('bank');
   await coach.getByText('Fox family now pays by bank transfer').waitFor();
-  step('With both offered, the club (not the parent) sets each family to card or bank; the parent sees one family page');
+  step('With both offered, the club (not the parent) sets each family to card or bank, and chooses who pays the card fee; the parent sees one family page');
 
   // ---------- Financial year and session passes ----------
   await coach.getByRole('button', { name: 'Settings' }).click();

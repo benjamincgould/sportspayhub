@@ -207,6 +207,10 @@ test('club fees: a club connects its own Stripe account and parent payments go t
   assert.equal((await parent.post('/api/checkout/pass', { passId: offer.id })).status, 503, 'no payments until the club connects Stripe');
   const connect = await coach.post('/api/club/connect');
   assert.equal(connect.json.url, 'https://connect.stripe.test/onboarding');
+  const created = stripe.calls.findLast((c) => c.name === 'accounts.create').args[0];
+  assert.deepEqual(created.controller.fees, { payer: 'account' }, 'the club pays Stripe\'s fees itself, so the platform has no Connect fees');
+  assert.deepEqual(created.controller.losses, { payments: 'stripe' }, 'Stripe, not the platform, carries the risk of losses');
+  assert.equal(created.type, undefined);
   const refreshed = await coach.post('/api/club/connect/refresh');
   assert.equal(refreshed.json.club.payments.connected, true);
 

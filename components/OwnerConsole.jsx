@@ -524,7 +524,7 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search clubs" aria-label="Search clubs" className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" />
               </div>
-              {!form && <button type="button" onClick={() => { setCreated(null); setForm({ clubName: '', sport: 'Swimming', name: '', email: '', free: true, monthlyPriceNzd: '', setupFeeNzd: '' }); }} className="px-3 bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1"><Plus size={12} /> Set up a club</button>}
+              {!form && <button type="button" onClick={() => { setCreated(null); setForm({ clubName: '', sport: 'Swimming', name: '', email: '', free: true, monthlyPriceNzd: '', setupFeeNzd: '', cardFee: 'club' }); }} className="px-3 bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1"><Plus size={12} /> Set up a club</button>}
             </div>
 
             {form && (
@@ -537,6 +537,12 @@ export function OwnerConsole({ user, signOut, updateUser }) {
                 <label className="block text-xs text-slate-500">Coach's name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={field} /></label>
                 <label className="block text-xs text-slate-500">Coach's email<input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={field} /></label>
                 <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={form.free} onChange={(e) => setForm({ ...form, free: e.target.checked })} /> Free access (no subscription needed)</label>
+                <label className="block text-xs text-slate-500">When parents pay by card, the card fee is paid by
+                  <select value={form.cardFee} onChange={(e) => setForm({ ...form, cardFee: e.target.value })} className={field} aria-label="Who pays the card fee">
+                    <option value="club">The club (parents pay the listed price)</option>
+                    <option value="parents">Parents (added as a card fee)</option>
+                  </select>
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block text-xs text-slate-500">Monthly price (NZD)
                     <input inputMode="decimal" value={form.monthlyPriceNzd} onChange={(e) => setForm({ ...form, monthlyPriceNzd: e.target.value })} placeholder={`Default ${nzd(data?.priceNzd)}`} className={field} />

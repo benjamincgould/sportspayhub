@@ -118,7 +118,7 @@ function LoginScreen({ notice, initialEmail, onResult, onForgot, onSignup }) {
 function SignupScreen({ onBack }) {
   const platform = useContext(PlatformContext);
   const sports = platform.sports?.length ? platform.sports : ['Swimming', 'Football', 'Rugby', 'Netball', 'Other'];
-  const [form, setForm] = useState({ clubName: '', sport: '', name: '', email: '' });
+  const [form, setForm] = useState({ clubName: '', sport: '', name: '', email: '', cardFee: 'club' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -164,6 +164,17 @@ function SignupScreen({ onBack }) {
             <label htmlFor="signup-email" className="text-sm font-medium text-slate-700">Your email</label>
             <input id="signup-email" type="email" value={form.email} onChange={set('email')} className={inputCls} required maxLength={254} autoComplete="email" />
           </div>
+          <fieldset className="space-y-1.5">
+            <legend className="text-sm font-medium text-slate-700">When parents pay by card, who pays the card fee?</legend>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input type="radio" name="signup-card-fee" className="mt-1" checked={form.cardFee === 'club'} onChange={() => setForm({ ...form, cardFee: 'club' })} />
+              <span>The club <span className="block text-xs text-slate-500">Parents pay your listed prices; Stripe's fee (about 2.65% + 30c) comes out of what you receive.</span></span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input type="radio" name="signup-card-fee" className="mt-1" checked={form.cardFee === 'parents'} onChange={() => setForm({ ...form, cardFee: 'parents' })} />
+              <span>Parents, added as a card fee <span className="block text-xs text-slate-500">The fee is added to card payments so you get the full amount. Bank transfers have no fee. You can change this later in Settings.</span></span>
+            </label>
+          </fieldset>
           {platform.priceNzd && <p className="text-xs text-slate-500">Free to look around. ${Number(platform.priceNzd).toFixed(2)} a month per club to use it, cancel any time.</p>}
           {error && <Alert>{error}</Alert>}
           <button type="submit" disabled={busy} className={primaryBtn}>{busy ? 'Creating…' : 'Create club'}</button>

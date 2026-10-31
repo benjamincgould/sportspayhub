@@ -77,13 +77,19 @@ Add and verify your domain, then create an API key. Set `RESEND_API_KEY` (or `PO
 
 ### 5. Stripe
 
-1. Create a Stripe account for your business, set to New Zealand. Start in **test mode**.
-2. **Turn on Connect** (Dashboard → Connect → Get started) and choose **Express** accounts for clubs.
-3. **Customer portal:** Settings → Billing → Customer portal. Turn on updating payment methods and cancelling.
-4. **Webhooks:** add two endpoints, both pointing at `https://your-address/api/webhook`:
-   - **Your account** events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.voided`, `invoice.payment_failed`. Its signing secret goes in `STRIPE_WEBHOOK_SECRET`.
-   - **Connected accounts** events: `account.updated`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`. Its signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`.
-5. Put your secret key in `STRIPE_SECRET_KEY` and redeploy. Test with card `4242 4242 4242 4242`. Switch to live keys once Stripe has verified your business.
+Clubs are paid straight into **their own** Stripe accounts (you never hold their money). You only need Stripe yourself to collect your monthly fee by card, and to let clubs connect.
+
+1. **Create your Stripe account** at stripe.com, with the country set to **New Zealand**. Stay in **test mode** (the toggle at the top) until everything works.
+2. **Turn on Connect:** Dashboard → **Connect** → **Get started**. When asked, choose that **clubs (connected accounts) pay Stripe's fees directly** and that **Stripe handles pricing**, and let them use the **full Stripe Dashboard**. That way you pay no Connect fees and aren't liable for a club's refunds or chargebacks. Fill in your platform's name and branding (shown to clubs when they connect).
+3. **Customer portal:** Settings → Billing → Customer portal. Turn on updating payment methods and cancelling (parents and clubs use it to change cards).
+4. **Webhooks:** Developers → **Webhooks** → add two endpoints, both pointing at `https://sportspayhub.vercel.app/api/webhook`:
+   - **Events on your account:** `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.voided`, `invoice.payment_failed`. Copy its **signing secret** (starts `whsec_`) into Vercel as `STRIPE_WEBHOOK_SECRET`.
+   - **Events on connected accounts:** `account.updated`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`. Its signing secret goes in `STRIPE_CONNECT_WEBHOOK_SECRET`.
+5. **Your secret key:** Developers → **API keys** → copy the **Secret key** (starts `sk_test_` in test mode) into Vercel as `STRIPE_SECRET_KEY`. Then **Redeploy**.
+6. **Test:** in a club, a coach taps **Connect Stripe** in Settings and fills in Stripe's test form; then a parent pays with card `4242 4242 4242 4242`, any future date and any CVC.
+7. **Going live:** once Stripe has verified your business, switch off test mode, repeat steps 4–5 with the live webhooks and live key (`sk_live_`), and redeploy.
+
+**Card fees:** each club chooses (when it signs up, and any time in Settings → How Parents Pay) whether it **pays Stripe's card fee itself** or **adds it to parents' card payments** as a "Card processing fee". The fee added is worked out from Stripe's NZ online card price (2.65% + 30c; change `STRIPE_FEE_PERCENT` / `STRIPE_FEE_FIXED_NZD` if Stripe's price changes), so the club gets the listed amount for a NZ card and parents are never charged more than the fee itself. Parents see the fee before they pay, and families paying by bank transfer pay no fee. Online surcharges are allowed in New Zealand; the planned surcharge ban covers in-store payments only.
 
 ## How a club joins
 

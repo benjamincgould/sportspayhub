@@ -47,7 +47,7 @@ const boot = async (who) => (await who.get('/api/bootstrap')).json;
 const lastCall = (name) => stripe.calls.findLast((c) => c.name === name);
 
 test('clubs start on card only; the coach or treasurer can switch to bank transfer', async () => {
-  assert.deepEqual((await boot(parent)).me.club.payments, { connected: true, started: true, card: true, bank: null, defaultMethod: 'bank' });
+  assert.deepEqual((await boot(parent)).me.club.payments, { connected: true, started: true, card: true, bank: null, defaultMethod: 'bank', cardFee: 'club', cardFeeRule: { percent: 2.65, fixedNzd: 0.3 } });
   assert.equal((await parent.put('/api/club/payment-methods', { bank: true })).status, 403, 'parents cannot change it');
   assert.equal((await treasurer.put('/api/club/payment-methods', { card: false, bank: false })).status, 400, 'at least one way to pay');
   assert.equal((await treasurer.put('/api/club/payment-methods', { bank: true })).status, 400, 'bank needs account details');
@@ -169,4 +169,55 @@ test('another club never sees these families or bank details', async () => {
   assert.equal((await oc.post(`/api/families/${famId}/payment`, { amount: 5 })).status, 404);
   assert.equal((await oc.put(`/api/families/${famId}/pay-method`, { method: 'card' })).status, 404);
   assert.equal((await oc.put(`/api/families/${famId}/frequency`, { frequency: 'weekly' })).status, 404);
+});
+
+test('card fees: the club chooses whether it pays Stripe\'s fee or parents do; parents see it before paying', async () => {
+  const { cardFeeFor } = await import('../lib/server/rules.js');
+  // Enough that the club still gets the full amount after Stripe's 2.65% + 30c, and never more
+  assert.equal(cardFeeFor(57), 1.85); // rounded down: the club may be under a cent short, parents are never over-charged
+  const net = (gross) => gross - (gross * 0.0265 + 0.30);
+  for (const amount of [5, 25.5, 57, 100, 312.4]) {
+    const fee = cardFeeFor(amount);
+    assert.ok(net(amount + fee) <= amount + 0.005 && net(amount + fee) >= amount - 0.02, `${amount}: fee ${fee}`);
+    assert.ok(fee <= (amount + fee) * 0.0265 + 0.30, 'never more than Stripe\'s own fee');
+  }
+  assert.equal(cardFeeFor(0), 0);
+
+  const fam = (await boot(parent)).families[0];
+  await coach.put(`/api/families/${fam.id}/pay-method`, { method: 'card' }); // it was moved to bank earlier
+  assert.equal(fam.cardFee, 0, 'the club pays by default');
+  assert.equal((await parent.put('/api/club/payment-methods', { cardFee: 'parents' })).status, 403, 'parents cannot choose');
+  const set = await treasurer.put('/api/club/payment-methods', { cardFee: 'parents' });
+  assert.equal(set.status, 200, set.text);
+  assert.equal(set.json.payments.cardFee, 'parents');
+  // Other saves keep the choice
+  assert.equal((await treasurer.put('/api/club/payment-methods', { defaultMethod: 'card' })).json.payments.cardFee, 'parents');
+
+  const after = (await boot(parent)).families.find((f) => f.id === fam.id);
+  assert.equal(after.payMethod, 'card');
+  assert.equal(after.cardFee, cardFeeFor(after.total), 'parents see the fee and the total before paying');
+  // The family's card subscription gets a card-fee line (Parker family has one from earlier tests)
+  const update = stripe.calls.findLast((c) => c.name === 'subscriptions.update' && c.args[1].items);
+  assert.ok(update.args[1].items.some((i) => String(i.price).startsWith('price_cardfee_')), 'card fee added to the card payments already set up');
+  const feePrice = stripe.calls.findLast((c) => c.name === 'prices.create' && c.args[0].product === 'card_fee').args[0];
+  assert.equal(feePrice.unit_amount, Math.round(cardFeeFor(after.total) * 100));
+
+  // Bank families never pay a card fee
+  await coach.put(`/api/families/${fam.id}/pay-method`, { method: 'bank' });
+  assert.equal((await boot(parent)).families.find((f) => f.id === fam.id).cardFee, 0);
+  await coach.put(`/api/families/${fam.id}/pay-method`, { method: 'card' });
+
+  // A pass bought by card carries the fee as its own line
+  const offer = (await coach.post(`/api/athletes/${leo.id}/passes`, { sessions: 5, price: 60, paidBy: 'offer' })).json.pass;
+  assert.equal((await parent.post('/api/checkout/pass', { passId: offer.id })).status, 200);
+  const passLines = stripe.calls.findLast((c) => c.name === 'checkout.sessions.create').args[0].line_items;
+  assert.equal(passLines.length, 2);
+  assert.equal(passLines[1].price_data.product_data.name, 'Card processing fee');
+  assert.equal(passLines[1].price_data.unit_amount, Math.round(cardFeeFor(60) * 100));
+
+  // Back to the club paying: the fee line is removed from card payments
+  await coach.put('/api/club/payment-methods', { cardFee: 'club' });
+  const back = stripe.calls.findLast((c) => c.name === 'subscriptions.update' && c.args[1].items);
+  assert.ok(back.args[1].items.every((i) => !String(i.price || '').startsWith('price_cardfee_')));
+  assert.equal((await boot(parent)).families[0].cardFee, 0);
 });
